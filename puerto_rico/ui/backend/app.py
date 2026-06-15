@@ -14,6 +14,7 @@ never holds rules: it sends a chosen ``action_id`` and renders the returned
 
 from __future__ import annotations
 
+import asyncio
 import logging
 import random
 import uuid
@@ -27,7 +28,14 @@ from puerto_rico.engine.game import Game
 from puerto_rico.engine.state import GameConfig
 
 from .catalog import CATALOG_RESPONSE
-from .schemas import ErrorMsg, NewGameMsg, NewGameResponse, SequenceMsg, StateMsg
+from .schemas import (
+    ActionMsg,
+    ErrorMsg,
+    NewGameMsg,
+    NewGameResponse,
+    SequenceMsg,
+    StateMsg,
+)
 from .session import GameSession
 
 logger = logging.getLogger("puerto_rico.ui.backend")
@@ -76,18 +84,20 @@ def create_app() -> FastAPI:
     """Build the FastAPI application (factory; also bound to module ``app``)."""
     app = FastAPI(title="Puerto Rico UI backend")
 
+    # Personal-use, single-user server: allow any origin (the docstring above
+    # notes this is not a public deployment). Listing specific dev origins
+    # alongside "*" would be redundant.
     app.add_middleware(
         CORSMiddleware,
-        allow_origins=[
-            "http://localhost:5173",
-            "http://127.0.0.1:5173",
-            "*",
-        ],
+        allow_origins=["*"],
         allow_credentials=True,
         allow_methods=["*"],
         allow_headers=["*"],
     )
 
+    # Intentionally an unbounded in-memory store: this server is personal /
+    # single-user, so games are never evicted (no TTL, no cap). Process restart
+    # clears everything.
     sessions: dict[str, GameSession] = {}
     app.state.sessions = sessions
 
@@ -117,26 +127,25 @@ def create_app() -> FastAPI:
     def get_game(game_id: str) -> StateMsg:
         return _get_session(game_id).state_view()
 
+    # Intentionally untyped: a static, game-independent reference payload
+    # computed once at import time (no response_model — the shape never varies).
     @app.get("/catalog")
     def get_catalog() -> dict:
         """Static building catalog + good base values (no game needed)."""
         return CATALOG_RESPONSE
 
     @app.post("/games/{game_id}/preview", response_model=StateMsg)
-    def preview_game(game_id: str, body: dict) -> StateMsg:
+    def preview_game(game_id: str, body: ActionMsg) -> StateMsg:
         """Apply ``action_id`` to a *clone* and return the hypothetical state.
 
         The real game is never mutated and no AI is run — this is a what-if frame
         (``preview=True``) the client diffs against the current state. ``404`` for
-        an unknown game; ``400`` for a missing/non-integer ``action_id`` or an
-        action that is not currently legal.
+        an unknown game; ``400`` for an action that is not currently legal (a
+        missing/non-integer ``action_id`` is rejected as a body-validation error).
         """
         session = _get_session(game_id)
-        action_id = body.get("action_id") if isinstance(body, dict) else None
-        if action_id is None:
-            raise HTTPException(status_code=400, detail="missing action_id")
         try:
-            return session.preview_action(int(action_id))
+            return session.preview_action(body.action_id)
         except (TypeError, ValueError, KeyError) as exc:
             raise HTTPException(status_code=400, detail=str(exc))
 
@@ -196,8 +205,6 @@ async def _send_sequence(websocket: WebSocket, states: list[StateMsg]) -> None:
     frames are then streamed with a short delay so a simpler client can animate
     by just rendering each frame as it arrives.
     """
-    import asyncio
-
     await websocket.send_json(SequenceMsg(states=states).model_dump() | {"type": "sequence"})
     for i, state in enumerate(states):
         await websocket.send_json(_state_frame(state))

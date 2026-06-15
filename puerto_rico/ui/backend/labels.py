@@ -21,6 +21,7 @@ never be wedged by a labeling gap.
 
 from __future__ import annotations
 
+from puerto_rico.engine import phases
 from puerto_rico.engine.actions import Action
 from puerto_rico.engine.buildings import CATALOG
 from puerto_rico.engine.enums import (
@@ -30,25 +31,18 @@ from puerto_rico.engine.enums import (
     Role,
     TileType,
 )
+from puerto_rico.engine.phases import (
+    CAPTAIN_WHARF,
+    ISLAND_TARGET_OFFSET,
+    MAYOR_STORE,
+)
 
-# Mirrors the engine's PLACE_COLONIST / LOAD encoding constants (phases.py),
-# kept local so this module does not import engine-private names.
-_MAYOR_STORE = -1
-_ISLAND_TARGET_OFFSET = 100
-_CAPTAIN_WHARF = 1
+from ._display import GOOD_NAMES
 
 
 # --------------------------------------------------------------------------- #
 # pretty-print helpers                                                         #
 # --------------------------------------------------------------------------- #
-
-_GOOD_NAMES: dict[Good, str] = {
-    Good.CORN: "Corn",
-    Good.INDIGO: "Indigo",
-    Good.SUGAR: "Sugar",
-    Good.TOBACCO: "Tobacco",
-    Good.COFFEE: "Coffee",
-}
 
 _ROLE_NAMES: dict[Role, str] = {
     Role.SETTLER: "Settler",
@@ -73,7 +67,7 @@ _TILE_NAMES: dict[TileType, str] = {
 def _good_name(good: Good | None) -> str:
     if good is None:
         return "goods"
-    return _GOOD_NAMES.get(good, str(good))
+    return GOOD_NAMES.get(good, str(good))
 
 
 def _building_name(bid: BuildingId | None) -> str:
@@ -84,39 +78,6 @@ def _building_name(bid: BuildingId | None) -> str:
     if spec is None:
         return str(bid)
     return spec.name.title()
-
-
-# --------------------------------------------------------------------------- #
-# discounted build cost (mirrors engine _build_cost in phases.py)             #
-# --------------------------------------------------------------------------- #
-
-
-def _discounted_build_cost(game, bid: BuildingId) -> int:
-    """The doubloon cost the current player would actually pay for ``bid`` now.
-
-    Replicates the engine's discount rule (printed cost − chooser privilege −
-    quarry discount, floored at 0) so the label matches what the engine charges.
-    Falls back to the printed cost if any state field is unavailable.
-    """
-    spec = CATALOG.get(bid)
-    if spec is None:
-        return 0
-    try:
-        state = game.state
-        player_idx = state.current_player
-        player = state.players[player_idx]
-        cost = spec.cost
-        if player_idx == state.phase_state.role_chooser:
-            cost -= 1
-        quarries = sum(
-            1
-            for s in player.island
-            if s.tile == TileType.QUARRY and s.colonist
-        )
-        cost -= min(quarries, spec.column)
-        return max(0, cost)
-    except Exception:
-        return spec.cost
 
 
 # --------------------------------------------------------------------------- #
@@ -164,12 +125,12 @@ def _role_placard_doubloons(game, role: Role) -> int:
 
 def _colonist_target_label(game, target: int) -> str:
     """Describe a PLACE_COLONIST target slot in human terms."""
-    if target == _MAYOR_STORE:
+    if target == MAYOR_STORE:
         return "Keep colonist in San Juan (storage)"
     try:
         player = game.state.players[game.state.current_player]
-        if target >= _ISLAND_TARGET_OFFSET:
-            slot = player.island[target - _ISLAND_TARGET_OFFSET]
+        if target >= ISLAND_TARGET_OFFSET:
+            slot = player.island[target - ISLAND_TARGET_OFFSET]
             tile_name = _TILE_NAMES.get(slot.tile, "tile")
             return f"Place colonist on {tile_name} plantation"
         slot = player.city[target]
@@ -206,7 +167,9 @@ def label_action(action: Action, game) -> str:
         return _colonist_target_label(game, action.target)
 
     if t == DecisionType.BUILD:
-        cost = _discounted_build_cost(game, action.building)
+        cost = phases.build_cost(
+            game.state, game.current_player, action.building
+        )
         return f"Build {_building_name(action.building)} (cost {cost})"
 
     if t == DecisionType.SELL:
@@ -214,7 +177,7 @@ def label_action(action: Action, game) -> str:
 
     if t == DecisionType.LOAD:
         good_name = _good_name(action.good)
-        if action.choice == _CAPTAIN_WHARF:
+        if action.choice == CAPTAIN_WHARF:
             return f"Use Wharf to ship {good_name}"
         try:
             held = game.state.players[game.state.current_player].goods[action.good]

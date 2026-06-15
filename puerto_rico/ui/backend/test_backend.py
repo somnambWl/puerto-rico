@@ -323,8 +323,9 @@ def test_preview_illegal_and_missing_action(client: TestClient) -> None:
     r_illegal = client.post(f"/games/{gid}/preview", json={"action_id": illegal})
     assert r_illegal.status_code == 400
 
+    # Missing action_id: rejected as a typed-body validation error (422).
     r_missing = client.post(f"/games/{gid}/preview", json={})
-    assert r_missing.status_code == 400
+    assert r_missing.status_code == 422
 
     r_unknown = client.post("/games/nope/preview", json={"action_id": 0})
     assert r_unknown.status_code == 404

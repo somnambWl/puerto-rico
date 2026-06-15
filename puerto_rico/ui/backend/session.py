@@ -91,10 +91,6 @@ class GameSession:
             )
         return out
 
-    def _result(self) -> dict | None:
-        """Final-score breakdown for the live game when terminal, else ``None``."""
-        return self._result_for(self.game)
-
     def _result_for(self, game) -> dict | None:
         """Final-score breakdown when ``game`` is terminal, else ``None``.
 
@@ -140,7 +136,7 @@ class GameSession:
             to_move=game.current_player,
             to_move_is_human=(game.current_player == self.human_seat),
             terminal=game.is_terminal,
-            result=self._result(),
+            result=self._result_for(game),
         )
 
     def preview_action(self, action_id: int) -> StateMsg:

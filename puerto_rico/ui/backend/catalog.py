@@ -16,26 +16,7 @@ from __future__ import annotations
 from puerto_rico.engine.buildings import CATALOG
 from puerto_rico.engine.enums import BuildingId, Good
 
-# --------------------------------------------------------------------------- #
-# good display + base sell values (design/02 trader)                          #
-# --------------------------------------------------------------------------- #
-
-_GOOD_NAMES: dict[Good, str] = {
-    Good.CORN: "Corn",
-    Good.INDIGO: "Indigo",
-    Good.SUGAR: "Sugar",
-    Good.TOBACCO: "Tobacco",
-    Good.COFFEE: "Coffee",
-}
-
-#: Base trading-house sell value per good (corn 0 .. coffee 4).
-_GOOD_BASE_VALUE: dict[Good, int] = {
-    Good.CORN: 0,
-    Good.INDIGO: 1,
-    Good.SUGAR: 2,
-    Good.TOBACCO: 3,
-    Good.COFFEE: 4,
-}
+from ._display import GOOD_BASE_VALUE, GOOD_NAMES
 
 # --------------------------------------------------------------------------- #
 # per-building human-readable descriptions (from design/03)                   #
@@ -73,7 +54,7 @@ _DESCRIPTIONS: dict[BuildingId, str] = {
 def _description(spec) -> str:
     """A concise one-sentence description for ``spec`` (rules-accurate per design/03)."""
     if spec.is_production:
-        good = _GOOD_NAMES.get(spec.produces, "goods")
+        good = GOOD_NAMES.get(spec.produces, "goods")
         return f"Produces {good} (needs colonists)."
     return _DESCRIPTIONS.get(spec.id, spec.name.capitalize() + ".")
 
@@ -97,7 +78,7 @@ def _building_entry(spec) -> dict:
         "capacity": spec.capacity,
         "is_large": spec.is_large,
         "is_production": spec.is_production,
-        "produces": (_GOOD_NAMES[spec.produces] if spec.produces is not None else None),
+        "produces": (GOOD_NAMES[spec.produces] if spec.produces is not None else None),
         "kind": _kind(spec),
         "description": _description(spec),
     }
@@ -106,8 +87,8 @@ def _building_entry(spec) -> dict:
 def _good_entry(good: Good) -> dict:
     return {
         "good": int(good),
-        "name": _GOOD_NAMES[good],
-        "base_value": _GOOD_BASE_VALUE[good],
+        "name": GOOD_NAMES[good],
+        "base_value": GOOD_BASE_VALUE[good],
     }
 
 
