@@ -1,0 +1,32 @@
+[project]
+name = "puerto_rico"
+version = "0.1.0"
+description = "A digital implementation of the board game Puerto Rico with an RL opponent."
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = [
+    "numpy>=1.26",
+    "pettingzoo>=1.24",
+    "gymnasium>=0.29",
+    "torch>=2.2",
+    "fastapi>=0.110",
+    "uvicorn[standard]>=0.29",
+    "websockets>=12",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.0",
+    "httpx>=0.27",
+]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["puerto_rico"]
+
+[tool.pytest.ini_options]
+testpaths = ["puerto_rico"]
+python_files = ["test_*.py"]

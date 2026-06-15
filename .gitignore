@@ -1,0 +1,27 @@
+# Python
+__pycache__/
+*.pyc
+*.egg-info/
+.venv/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# Node / frontend
+node_modules/
+puerto_rico/ui/frontend/dist/
+puerto_rico/ui/frontend/.vite/
+
+# Training artifacts — keep only the released model, ignore the rest of runs/
+runs/**
+!runs/
+!runs/release/
+!runs/release/**
+
+# Upload / scratch leftovers
+files (4).zip
+mnt/
+
+# OS / editor
+.DS_Store
+*.swp
