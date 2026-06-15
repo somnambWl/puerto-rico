@@ -1,7 +1,7 @@
 # Task 08: Helper Functions
 
 ## Status
-not started
+done
 
 ## Epic
 buildings

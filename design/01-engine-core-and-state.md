@@ -182,9 +182,9 @@ class Game:
     @property
     def is_terminal(self) -> bool: ...
     def legal_actions(self) -> list[Action]: ...      # never empty unless terminal
-    def apply(self, action: Action) -> None: ...       # mutates in place; raises on illegal action
+    def apply(self, action: Action, validate: bool = True) -> None: ...       # mutates in place; raises on illegal action (validate=False skips check for hot path)
     def clone(self) -> "Game": ...
-    def returns(self) -> list[float]: ...              # terminal payoffs per player (design/05 reward)
+    def returns(self, reward_mode: str = "rank") -> list[float]: ...              # terminal payoffs per player (design/05 reward); modes: rank/win/vp_margin
     def winner(self) -> int | None: ...                # tie-break by doubloons+goods
     def public_view(self, perspective: int|None=None) -> dict: ...  # serialize.py, for UI
 ```

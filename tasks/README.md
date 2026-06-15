@@ -7,17 +7,18 @@ Status legend: `not started` | `in progress` | `done`
 
 ## Epic: enhancements (post-v1)
 Deeper strategic decisions + stronger AI (user request: model must be able to beat humans).
+See `conversation-notes.md` for rationale and implementation details.
 
 | Task | Title | Status | Dependencies |
 |------|-------|--------|--------------|
 | E1 | Captain: explicit ship-selection + goods-keep CHOOSE | done | engine, phases-07 |
 | E2 | Codec: encode ship + keep decisions | done | E1 |
 | E3 | Heuristic: ship/keep strategy | done | E1, E2 |
-| E4 | Retrain strong model (beat-humans target) | done | E1, E2, E3 |
-| E5 | Backend: action-preview endpoint + building catalog/descriptions + good values | done | ui-backend |
-| E6 | Frontend: tooltips, step/pause AI playback, VP-sorted shelf, trading values, action preview | done | E5 |
-| E7 | RL strategy audit (measurable strong-play signatures) | done | E4 |
-| E8 | Improve RL toward dominant strategies (if audit finds gaps) | done | E7 |
+| E4 | Retrain strong model (beat-humans target, ~94% vs heuristic) | done | E1, E2, E3 |
+| E5 | Backend: `/preview` endpoint + `/catalog` + building descriptions + good base values | done | ui-backend |
+| E6 | Frontend: tooltips, step/pause AI playback, VP-sorted shelf, good-value hints, preview integration | done | E5 |
+| E7 | RL strategy audit: opening roles, build sequences, trading/shipping behavior | done | E4 |
+| E8 | Refine RL if strategy audit finds gaps (turn E7 findings into targeted improvements) | done | E7 |
 
 ## Epic: engine-core
 Design: `design/00-overview-and-architecture.md`, `design/01-engine-core-and-state.md`
@@ -77,21 +78,22 @@ Design: `design/04-rl-environment.md`. Depends on the full engine (core + phases
 
 ## Epic: agents-training
 Design: `design/05-agents-and-training.md`. Depends on env + engine.
-**NOTE:** RL stack reworked from Ray RLlib → **custom PyTorch PPO** (user-approved; see memory `rl-backend-decision`). Tasks 03/04/05/07 remapped to PyTorch modules.
+**NOTE:** RL stack implemented in **custom PyTorch** (not RLlib; see `conversation-notes.md`). Tasks 03/04/05/07
+correspond to PyTorch modules: rollout collection, model, opponent pool, and training loop respectively.
 
 | Task | Title | Status | Dependencies |
 |------|-------|--------|--------------|
 | [01](agents-task-01-random-agent.md) | RandomAgent | done | env-03 |
 | [02](agents-task-02-heuristic-agent.md) | HeuristicAgent | done | agents-01 |
-| [04](agents-task-04-masked-model.md) | Masked actor-critic (`training/model.py`) | done | env-02 |
-| [03](agents-task-03-env-registration.md) | Self-play rollout collector (`training/rollout.py`) | done | agents-04 |
-| [05](agents-task-05-opponent-pool.md) | Opponent pool & snapshotting | done | agents-01, 02, 04 |
-| [06](agents-task-06-reward-shaping.md) | Reward shaping | done | engine, training config |
-| [07](agents-task-07-ppo-training.md) | PPO trainer (`training/ppo.py`) | done | agents-03, 04, 05, 06 |
-| [08](agents-task-08-rl-policy.md) | RLPolicy inference wrapper | done | agents-07 |
-| [09](agents-task-09-evaluation-harness.md) | Evaluation harness (Arena/Elo) | done | agents-01, 02, 08 |
-| [10](agents-task-10-smoke-test.md) | Smoke test (>80% vs random) | done | agents-01…09 |
-| [11](agents-task-11-rl-vs-heuristic-benchmark.md) | RL vs heuristic benchmark (M4) | done | agents-01…10 |
+| [04](agents-task-04-masked-model.md) | Masked actor-critic (`training/model.py`, MaskedActorCritic) | done | env-02 |
+| [03](agents-task-03-env-registration.md) | Self-play rollout collector (`training/rollout.py`, collect_rollouts) | done | agents-04 |
+| [05](agents-task-05-opponent-pool.md) | Opponent pool & snapshotting (`training/opponent_pool.py`) | done | agents-01, 02, 04 |
+| [06](agents-task-06-reward-shaping.md) | Reward config (`training/reward_config.py`, rank/win/vp_margin + shaping) | done | engine |
+| [07](agents-task-07-ppo-training.md) | PPO trainer (`training/ppo.py`, PPOConfig + train loop) | done | agents-03, 04, 05, 06 |
+| [08](agents-task-08-rl-policy.md) | RLPolicy inference wrapper (`agents/rl_policy.py`) | done | agents-07 |
+| [09](agents-task-09-evaluation-harness.md) | Evaluation harness (`training/evaluate.py`, Arena/Elo/strategy audit) | done | agents-01, 02, 08 |
+| [10](agents-task-10-smoke-test.md) | Smoke test (`training/smoke_train.py`, >80% vs random in ~5 min) | done | agents-01…09 |
+| [11](agents-task-11-rl-vs-heuristic-benchmark.md) | Strong benchmark (`training/train_strong.py`, ~94% vs heuristic) | done | agents-01…10 |
 
 ## Epic: ui
 Design: `design/06-ui.md`. Depends on engine + agents.

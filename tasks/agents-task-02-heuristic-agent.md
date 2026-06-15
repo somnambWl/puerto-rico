@@ -1,7 +1,7 @@
 # Task 02: HeuristicAgent
 
 ## Status
-not started
+done
 
 ## Epic
 agents-training

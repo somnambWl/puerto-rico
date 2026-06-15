@@ -1,7 +1,7 @@
 # Task 03: WebSocket Protocol
 
 ## Status
-not started
+done
 
 ## Epic
 ui

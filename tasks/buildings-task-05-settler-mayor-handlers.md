@@ -1,7 +1,7 @@
 # Task 05: Small Beige Settler/Mayor Handlers (hacienda, construction hut, hospice)
 
 ## Status
-not started
+done
 
 ## Epic
 buildings

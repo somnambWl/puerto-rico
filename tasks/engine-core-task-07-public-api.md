@@ -1,7 +1,7 @@
 # Task 07: Public API
 
 ## Status
-not started
+done
 
 ## Epic
 engine-core

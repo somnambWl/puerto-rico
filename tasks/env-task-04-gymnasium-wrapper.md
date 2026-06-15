@@ -1,7 +1,7 @@
 # Task 04: Gymnasium Single-Agent Wrapper
 
 ## Status
-not started
+done
 
 ## Epic
 env

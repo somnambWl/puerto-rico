@@ -1,7 +1,7 @@
 # Task 07: Integration Test — Full Catalog & Interactions
 
 ## Status
-not started
+done
 
 ## Epic
 buildings

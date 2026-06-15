@@ -64,3 +64,53 @@ play against. Started from the uploaded rulebooks (Deluxe + 2002 editions), tran
 
 Engine → Env → baseline agents (random + heuristic) → RL training → UI. A human can play vs the
 heuristic agent as soon as the engine + a thin UI exist, before any RL is trained.
+
+## RL Backend Decision: Ray RLlib → Custom PyTorch PPO
+
+**When/Why:** During implementation of the agents/training epic (tasks 03–11), the plan to use Ray
+RLlib was revised. Instead, a custom PyTorch PPO trainer was built from scratch.
+
+**Rationale:**
+- **Debuggability:** RLlib abstracts away the training loop, making it hard to inspect what the
+  agent is doing. A custom trainer lets us log arbitrary telemetry (strategy audit, mask violations)
+  and step through the code interactively.
+- **Dependency footprint:** RLlib pulls in Ray, which is heavy and requires special serve-time setup.
+  A custom trainer uses only torch + numpy, making it lighter and deployable anywhere.
+- **Action masking:** While RLlib has action-masking support, it was designed for a different API
+  (Gym spaces, policy_mapping_fn). Our masked-logit approach is simpler and easier to verify.
+- **Reproducibility:** Custom code makes it easier to reproduce the exact behavior and lock in
+  hyperparameters across runs.
+
+**What changed in the docs:**
+- `design/05-agents-and-training.md` completely rewritten to describe custom PyTorch instead of RLlib.
+- File tree updates: `training/{model,rollout,opponent_pool,ppo,reward_config,evaluate,smoke_train,train_strong,...}.py`
+  (not RLlib's `env_factory.py`, `train.py` with RLlib config, etc.).
+- Model renamed: `MaskedActorCritic(nn.Module)` (not `TorchModelV2` or RLlib-specific wrappers).
+- Reward modes: implemented in `training/reward_config.py` (not RLlib policies).
+- Self-play: `OpponentPool` + `collect_rollouts` (not `policy_mapping_fn` / `SelfPlayCallback`).
+
+**Task mapping:**
+- agents-task-03: "RLlib env registration" → superseded by `training/rollout.py` (rollout collection)
+- agents-task-04: "Masked model" → `training/model.py` (MaskedActorCritic)
+- agents-task-05: "Opponent pool & callbacks" → `training/opponent_pool.py` + `training/ppo.py`
+- agents-task-07: "PPO training" → `training/ppo.py` (custom loop, no RLlib config)
+
+## Enhancements (E1–E8)
+
+Post-v1 improvements added after the base-game engine + UI were complete:
+
+- **E1 (Captain explicit decisions):** Extended captain phase to make explicit (good, ship) choices
+  and optionally keep a good on the windrose (not auto-discard). Deepens captain strategy.
+- **E2 (Codec updates):** Updated action codec to encode ship + keep decisions (added CHOOSE block
+  for captain windrose; changed LOAD to explicit cargo+wharf encoding). N_ACTIONS → 92.
+- **E3 (Heuristic captain):** Improved heuristic agent to make sensible ship/keep choices.
+- **E4 (Retrain strong):** Re-trained the RL agent with E1–E3 in place; new checkpoint achieves ~94%
+  win rate vs 3 HeuristicAgents (original target: >45%).
+- **E5 (Backend preview):** Added `POST /games/{id}/preview` endpoint for hypothetical action
+  evaluation. Backend also gained `/catalog` for static building/good reference.
+- **E6 (Frontend enhancements):** Added UI tooltips (building descriptions), step/pause AI playback,
+  VP-sorted building shelf, good trading values from catalog. Uses preview endpoint for what-if hints.
+- **E7 (Strategy audit):** Post-training analysis of the learned policy's behavior (opening roles,
+  build order, shipping/trading strategy). Documented in `docs/rl-strategy-audit.md`.
+- **E8 (Improve RL):** Evaluated whether the audit found gaps and implemented improvements if needed.
+  (In practice, the policy was already strong; E8 was a no-op refinement pass.)

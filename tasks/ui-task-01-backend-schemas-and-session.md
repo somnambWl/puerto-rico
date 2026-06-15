@@ -1,7 +1,7 @@
 # Task 01: Backend Schemas + Session Model
 
 ## Status
-not started
+done
 
 ## Epic
 ui

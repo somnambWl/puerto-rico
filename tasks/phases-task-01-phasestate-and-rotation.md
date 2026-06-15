@@ -1,7 +1,7 @@
 # Task 01: PhaseState Cursor and Governor Rotation
 
 ## Status
-not started
+done
 
 ## Epic
 engine-phases

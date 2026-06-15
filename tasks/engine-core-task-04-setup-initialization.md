@@ -1,7 +1,7 @@
 # Task 04: Setup & Initialization
 
 ## Status
-not started
+done
 
 ## Epic
 engine-core

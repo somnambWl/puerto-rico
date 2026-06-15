@@ -1,7 +1,17 @@
 # Task 03: RLlib Env Registration and Policy Mapping
 
 ## Status
-not started
+done (SUPERSEDED: implemented as custom PyTorch PPO)
+
+## NOTE: Superseded
+This task describes RLlib integration. The project was reworked to use **custom PyTorch PPO** instead.
+The equivalent implementation is:
+- **Rollout collection:** `training/rollout.py` — `collect_rollouts(cfg)` runs parallel episodes and
+  collects GAE-Lambda advantages; no RLlib wrapper needed.
+- **Policy mapping:** implicit in the rollout collector — all learner seats run the same network weights;
+  non-learner seats are sampled from `OpponentPool` with `self_play_prob`.
+
+See `conversation-notes.md` for the RL backend decision rationale.
 
 ## Epic
 agents-training

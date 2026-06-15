@@ -1,7 +1,7 @@
 # Task 04: BUILDER Phase
 
 ## Status
-not started
+done
 
 ## Epic
 engine-phases

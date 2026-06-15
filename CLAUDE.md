@@ -24,7 +24,7 @@ reinforcement-learning opponent. Personal-use project (the game is published; do
 
 - Python 3.11+ for engine, env, agents, training.
 - `pettingzoo` (AEC API) for the environment; `numpy` for encoding.
-- `ray[rllib]` for multi-agent PPO self-play (custom action-masking model).
+- `torch` (PyTorch) for custom multi-agent PPO self-play with action masking (no RLlib dependency).
 - `fastapi` + `websockets` backend; `react` + `typescript` frontend for the UI.
 - `pytest` for tests. `uv` for dependency management.
 

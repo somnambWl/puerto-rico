@@ -1,7 +1,7 @@
 # Task 08: Integration Test — Random Playthrough
 
 ## Status
-not started
+done
 
 ## Epic
 engine-core

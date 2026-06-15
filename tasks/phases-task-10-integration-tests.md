@@ -1,7 +1,7 @@
 # Task 10: Integration and Full-Game Playthrough Tests
 
 ## Status
-not started
+done
 
 ## Epic
 engine-phases

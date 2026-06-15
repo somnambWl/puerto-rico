@@ -1,7 +1,7 @@
 # Task 05: React App Setup + Board
 
 ## Status
-not started
+done
 
 ## Epic
 ui

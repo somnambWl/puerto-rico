@@ -1,7 +1,7 @@
 # Task 05: Opponent Pool and Snapshotting
 
 ## Status
-not started
+done
 
 ## Epic
 agents-training

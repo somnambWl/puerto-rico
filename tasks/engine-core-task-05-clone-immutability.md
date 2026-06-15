@@ -1,7 +1,7 @@
 # Task 05: Clone & Immutability
 
 ## Status
-not started
+done
 
 ## Epic
 engine-core

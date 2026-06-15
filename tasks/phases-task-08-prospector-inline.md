@@ -1,7 +1,7 @@
 # Task 08: PROSPECTOR (inline in role selection)
 
 ## Status
-not started
+done
 
 ## Epic
 engine-phases

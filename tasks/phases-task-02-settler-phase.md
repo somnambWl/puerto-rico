@@ -1,7 +1,7 @@
 # Task 02: SETTLER Phase
 
 ## Status
-not started
+done
 
 ## Epic
 engine-phases

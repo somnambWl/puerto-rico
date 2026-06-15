@@ -1,7 +1,7 @@
 # Task 10: Training Smoke Test
 
 ## Status
-not started
+done
 
 ## Epic
 agents-training

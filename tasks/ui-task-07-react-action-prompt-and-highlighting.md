@@ -1,7 +1,7 @@
 # Task 07: React Action Prompt + Highlighting
 
 ## Status
-not started
+done
 
 ## Epic
 ui

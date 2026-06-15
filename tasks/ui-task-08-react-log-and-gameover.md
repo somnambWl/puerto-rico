@@ -1,7 +1,7 @@
 # Task 08: React Log + Game-Over
 
 ## Status
-not started
+done
 
 ## Epic
 ui

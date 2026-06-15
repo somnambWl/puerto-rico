@@ -1,7 +1,7 @@
 # Task 04: Small Beige Core Handlers (markets, warehouses, office, factory, university, wharf, harbor)
 
 ## Status
-not started
+done
 
 ## Epic
 buildings

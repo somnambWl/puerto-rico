@@ -1,7 +1,7 @@
 # Task 03: Production Buildings — Vanilla Specs
 
 ## Status
-not started
+done
 
 ## Epic
 buildings

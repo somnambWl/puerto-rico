@@ -1,7 +1,7 @@
 # Task 09: Automated Client Integration Test
 
 ## Status
-not started
+done
 
 ## Epic
 ui

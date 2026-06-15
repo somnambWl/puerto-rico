@@ -1,7 +1,7 @@
 # Task 02: ObsCodec — Flat Observation Encoder
 
 ## Status
-not started
+done
 
 ## Epic
 env

@@ -1,7 +1,7 @@
 # Task 01: ActionCodec — Fixed-Size Discrete Action Space
 
 ## Status
-not started
+done
 
 ## Epic
 env

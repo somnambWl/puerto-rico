@@ -1,7 +1,7 @@
 # Task 11: Stretch — RL vs Heuristic Benchmark (M4)
 
 ## Status
-not started
+done
 
 ## Epic
 agents-training

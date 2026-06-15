@@ -1,7 +1,7 @@
 # Task 06: Serialization
 
 ## Status
-not started
+done
 
 ## Epic
 engine-core

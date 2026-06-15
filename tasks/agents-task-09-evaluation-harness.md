@@ -1,7 +1,7 @@
 # Task 09: Evaluation Harness
 
 ## Status
-not started
+done
 
 ## Epic
 agents-training

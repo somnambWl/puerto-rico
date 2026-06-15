@@ -1,7 +1,7 @@
 # Task 01: RandomAgent and Agent Protocol
 
 ## Status
-not started
+done
 
 ## Epic
 agents-training

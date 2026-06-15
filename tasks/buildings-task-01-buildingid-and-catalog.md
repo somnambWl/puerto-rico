@@ -1,7 +1,7 @@
 # Task 01: BuildingId Enum + CATALOG
 
 ## Status
-not started
+done
 
 ## Epic
 buildings

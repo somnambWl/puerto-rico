@@ -1,7 +1,7 @@
 # Task 06: React PlayerBoard x4
 
 ## Status
-not started
+done
 
 ## Epic
 ui

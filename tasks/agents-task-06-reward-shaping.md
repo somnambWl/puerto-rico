@@ -1,7 +1,7 @@
 # Task 06: Reward Shaping and Engine Integration
 
 ## Status
-not started
+done
 
 ## Epic
 agents-training

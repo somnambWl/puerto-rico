@@ -1,7 +1,7 @@
 # Task 09: End-of-Game Detection and Final Scoring
 
 ## Status
-not started
+done
 
 ## Epic
 engine-phases

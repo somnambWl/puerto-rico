@@ -30,20 +30,19 @@ objects. Bridge them with a canonical enumeration.
   - `SELECT_ROLE` × 7 roles
   - `TAKE_TILE` × {QUARRY, the 5 plantation kinds} (placement auto-resolved per design/02 — no slot in
     the action)
-  - `PLACE_COLONIST` × {one id per distinct circle *type*}. Because exact slot index is irrelevant for
-    plantations/quarries, collapse placement targets to **categories**: "place on an empty
-    {corn|indigo|sugar|tobacco|coffee|quarry} tile", "place on building {BuildingId}", and "STORE".
-    This keeps the action set small and permutation-invariant. (~6 tile categories + #buildings + STORE.)
-  - `BUILD` × (#distinct BuildingId)
+  - `PLACE_COLONIST` × 25: city slots (0–11) + island slots (0–11) + STORE. **Note:** this is NOT
+    collapsed to categories; slot indices are encoded directly because a player can own multiple empty
+    slots of the same tile kind or equal building slots. Encoding the raw slot index preserves the
+    codec's critical invariant: `mask.sum() == len(legal_actions)` (no many-to-one collisions).
+  - `BUILD` × 23 buildings (BuildingId 0–22)
   - `SELL` × 5 goods
-  - `LOAD` × (5 goods × {ship0, ship1, WHARF}); ship/amount otherwise forced
-  - `PASS` × 1
-  - building `CHOOSE` sub-decisions × (small enumerated set: warehouse-protect kind, craftsman bonus
-    good, storage keep) — enumerate each as its own ids.
-- Total size is a few hundred ids (compute and freeze it). `ActionCodec` provides:
+  - `LOAD` × 20: cargo (5 goods × 3 ships) + wharf (5 goods); ship/amount otherwise forced
+  - `CHOOSE` × 5: craftsman/captain windrose good choice (one enum per Good)
+  - `PASS` × 1: decline an optional action
+- **Total: `N_ACTIONS = 92`** (frozen constant). `ActionCodec` provides:
   - `to_int(action: Action) -> int`
   - `from_int(i: int, state) -> Action` (state needed to resolve auto-placement/forced ship)
-  - `mask(state) -> np.ndarray[bool]` of length `n_actions`, True for ids whose decoded action is
+  - `mask(state) -> np.ndarray[bool]` of length `N_ACTIONS`, True for ids whose decoded action is
     currently legal. Built directly from `state.legal_actions()` so the env never diverges from engine
     legality.
 
@@ -56,31 +55,33 @@ A flat `float32` vector (start simple; a structured/graph encoding is a later op
 from the **current player's perspective** so the policy is symmetric. Concatenate:
 
 1. **Self player block** and **each opponent block** (opponents in seating order starting after self):
-   - doubloons (scaled), stored_colonists (scaled), vp_chips (self only; opponents' hidden → 0 or a
-     "known-unknown" flag), per-good held counts (5), filled island spaces, empty building circles.
+   - doubloons (scaled), stored_colonists (scaled), vp_chips (self only; opponents' hidden → 0 with a
+     "known" flag that is 1.0 only for self), per-good held counts (5), filled island spaces, empty building circles.
    - island summary: count of each tile kind (6) and how many of each are occupied.
-   - city: for each BuildingId a 2-dim (owned?, occupied?) — fixed length = 2 × #buildings.
+   - city: for each BuildingId a 2-dim (owned?, occupied?) — fixed length = 2 × 23 buildings.
 2. **Shared board block:** role placards (per role: available? doubloons-on-it), colonist_ship count,
    colonist_supply (scaled), per cargo ship (capacity, good one-hot(5)+empty, count), trading_house
-   (count + which kinds present, multiset over 5), goods_supply (5, scaled), plantation_faceup (counts
-   per kind, 6), plantation_facedown size (scaled), quarry_supply, vp_chips_remaining (scaled),
-   buildings_supply (per BuildingId remaining count).
-3. **Phase block:** one-hot(Phase), one-hot(active_role), current sub-state scalars
-   (colonists_to_place, order position), and **the action mask is provided separately** by the env,
-   not inside the observation (RLlib expects mask in the obs dict — see below).
+   (count of each good kind, 5), goods_supply (5, scaled), plantation_faceup (counts per kind, 6),
+   plantation_facedown size (scaled), quarry_supply, vp_chips_remaining (scaled), buildings_supply
+   (per BuildingId remaining count).
+3. **Phase block:** one-hot(Phase), one-hot(active_role, plus NONE), current sub-state scalars
+   (colonists_to_place, order position, relative current player index), and **the action mask is
+   provided separately** by the env, not inside the observation vector itself.
 
-Normalize counts to roughly [0,1] using known maxima (doubloons rarely exceed ~50; VP up to 65; etc.).
-Keep the layout in one module with named offsets and a single `OBS_LEN` constant. Provide an
-`describe()` that returns human-readable feature names for debugging.
+**`OBS_LEN = 377`** (frozen constant, computed from the layout). Normalize counts to roughly [0,1]
+using documented maxima (see `_MAX_*` constants); values are clipped so no NaNs or infinities occur.
+Keep the layout in one module (`_build_layout()`) that yields both the writer order and `describe()`
+labels, so the two never drift apart.
 
-### RLlib-compatible observation dict
+### Observation dict contract
 
 Expose observations as:
 ```python
 {"observation": np.ndarray(OBS_LEN, float32),
  "action_mask": np.ndarray(N_ACTIONS, float32)}   # 1.0 legal, 0.0 illegal
 ```
-This is the standard masked-action format RLlib's models consume.
+This dict is the contract between the env and the agent/model: the agent always respects the mask
+(samples only from legal actions; never passes illegal actions).
 
 ## Env behavior (pettingzoo_env.py)
 

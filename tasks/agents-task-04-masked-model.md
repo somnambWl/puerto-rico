@@ -1,7 +1,7 @@
 # Task 04: Action-Masking Model
 
 ## Status
-not started
+done
 
 ## Epic
 agents-training

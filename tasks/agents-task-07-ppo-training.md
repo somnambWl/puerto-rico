@@ -1,7 +1,18 @@
 # Task 07: PPO Training Config and Loop
 
 ## Status
-not started
+done (SUPERSEDED: implemented as custom PyTorch PPO)
+
+## NOTE: Superseded
+This task describes RLlib-based PPO training. The project was reworked to use **custom PyTorch PPO**.
+The equivalent implementation is:
+- **Training config:** `training/ppo.py` — `PPOConfig` dataclass (not `config.yaml`).
+- **Training loop:** `training/ppo.py` — `train(cfg)` function with manual PPO update loop (not
+  RLlib's `Trainer.train()`).
+- **Checkpoint format:** plain `torch.save()` dict with codec versions and model state (not RLlib
+  checkpoint directory).
+
+See `conversation-notes.md` for the RL backend decision rationale.
 
 ## Epic
 agents-training

@@ -1,7 +1,7 @@
 # Task 02: Hook Framework (HANDLERS + fire dispatcher)
 
 ## Status
-not started
+done
 
 ## Epic
 buildings

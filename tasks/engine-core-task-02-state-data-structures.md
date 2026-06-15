@@ -1,7 +1,7 @@
 # Task 02: State Data Structures
 
 ## Status
-not started
+done
 
 ## Epic
 engine-core

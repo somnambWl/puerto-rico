@@ -1,7 +1,7 @@
 # Task 02: FastAPI App + Session Manager
 
 ## Status
-not started
+done
 
 ## Epic
 ui

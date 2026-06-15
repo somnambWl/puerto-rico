@@ -1,7 +1,7 @@
 # Task 06: Large Beige Scoring Handlers (SCORE_END)
 
 ## Status
-not started
+done
 
 ## Epic
 buildings
