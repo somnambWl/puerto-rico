@@ -21,6 +21,7 @@ import pytest
 
 from puerto_rico.env import action_codec, obs_codec
 from puerto_rico.env.gymnasium_wrapper import PuertoRicoSingle
+from puerto_rico.training.reward_config import terminal_rewards
 
 
 def _legal_ids(mask) -> np.ndarray:
@@ -82,9 +83,34 @@ def test_episode_completes():
 
     assert terminated is True
     assert env._aec.game.is_terminal
-    # Final reward is the learner's engine return.
+    # Final reward is the learner's engine return (default "rank" mode).
     expected = float(env._aec.game.returns()[env.learner_seat])
     assert reward == pytest.approx(expected)
+
+
+def test_terminal_reward_honors_reward_mode():
+    """The configured reward_mode drives the terminal reward (not always rank).
+
+    With reward_mode="win" the learner's final reward must equal
+    terminal_rewards(state, "win")[learner_seat] — 1.0 for a sole winner, a
+    tie-share otherwise, 0.0 for a loser — rather than the default rank payoff.
+    """
+    env = PuertoRicoSingle({"num_players": 4, "seed": 7, "reward_mode": "win"})
+    rng = np.random.default_rng(11)
+    obs, _ = env.reset(seed=7)
+
+    terminated = False
+    reward = None
+    while not terminated:
+        action = int(rng.choice(_legal_ids(obs["action_mask"])))
+        obs, reward, terminated, _t, _ = env.step(action)
+
+    assert terminated is True
+    expected_win = terminal_rewards(env._aec.game.state, "win")[env.learner_seat]
+    assert reward == pytest.approx(float(expected_win))
+    # And it must be a "win"-mode value (in {0.0, tie-shares, 1.0}), distinct in
+    # general from the rank payoff that the buggy code returned.
+    assert reward in (0.0, 1.0) or 0.0 < reward < 1.0
 
 
 def test_opponent_called():

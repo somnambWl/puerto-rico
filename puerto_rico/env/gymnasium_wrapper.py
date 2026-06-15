@@ -22,10 +22,11 @@ Reading the learner's terminal reward despite AEC pruning
 PettingZoo's AEC prunes terminated agents from ``agents`` / ``rewards`` once they
 take their dead-step, and at termination the ``agent_selection`` need not be the
 learner. So we never rely on the AEC reward bookkeeping at the end. Instead, the
-underlying engine is the source of truth: when ``game.is_terminal`` we read
-``game.returns()[learner_seat]`` directly. Per-step (non-terminal) rewards are
-read from the AEC's ``rewards`` dict, which is keyed by agent and accumulated
-each step before any pruning would remove it.
+underlying engine is the source of truth: when ``game.is_terminal`` we compute
+``terminal_rewards(game.state, reward_mode)[learner_seat]`` directly, honoring the
+AEC's configured ``reward_mode`` (the same payoff pettingzoo_env emits). Per-step
+(non-terminal) rewards are read from the AEC's ``rewards`` dict, which is keyed by
+agent and accumulated each step before any pruning would remove it.
 
 Determinism
 -----------
@@ -41,6 +42,7 @@ import gymnasium
 import numpy as np
 from gymnasium.spaces import Discrete
 
+from ..training.reward_config import terminal_rewards
 from . import action_codec
 from .pettingzoo_env import PuertoRicoAEC
 
@@ -156,8 +158,14 @@ class PuertoRicoSingle(gymnasium.Env):
 
         if self._is_terminal():
             # Final return read straight from the engine — independent of AEC
-            # agent pruning / which seat is agent_selection at the end.
-            reward = float(self._aec.game.returns()[self.learner_seat])
+            # agent pruning / which seat is agent_selection at the end. Honor the
+            # AEC's configured reward_mode (mirrors pettingzoo_env.py's terminal
+            # payoff); game.returns() would always use the default "rank" mode.
+            reward = float(
+                terminal_rewards(self._aec.game.state, self._aec.reward_mode)[
+                    self.learner_seat
+                ]
+            )
             return self._terminal_obs(), reward, True, False, {}
 
         # Non-terminal: per-step reward accrued to the learner since its last
