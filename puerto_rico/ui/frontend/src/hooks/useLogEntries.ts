@@ -1,11 +1,12 @@
 /**
  * useLogEntries — derives the ordered Log from the playback feed.
  *
- * The backend streams the resulting StateMsg after each applied action but not
- * the applied action's own label (legal_actions describe the NEXT decision). So:
- *   - the human's chosen label is recorded directly (recordHumanAction),
- *   - for each subsequent AI frame we synthesize an entry from the seat that
- *     just moved (the previous frame's to_move) and the phase it acted in.
+ * The backend now attaches `last_action_label` + `last_action_seat` to each
+ * streamed frame: the action that PRODUCED that frame (e.g. "Build Harbor
+ * (cost 6)" by seat 2). We use those directly so the log shows exactly what
+ * each AI and the human did. We fall back to the old synthesized
+ * "<phase> action" / human-recorded label only when the backend leaves those
+ * null (initial connect / preview frames).
  *
  * `logFeed` is the append-only list of consumed states from useGameState; we
  * track how many we've turned into entries (consumedCount) and the previous
@@ -55,16 +56,30 @@ export function useLogEntries(
     for (let i = consumedCount.current; i < logFeed.length; i++) {
       const frame = logFeed[i];
       const prev = prevFrame.current;
-      // The seat that just acted is the previous frame's to_move; if we have no
-      // previous frame, fall back to the human seat.
-      const actorSeat = prev ? prev.to_move : humanSeat;
-      const phaseName =
-        PHASE_NAMES[prev ? prev.view.phase : frame.view.phase] ?? "move";
+
+      // Prefer the backend-supplied action that produced this frame.
+      const hasBackendLabel =
+        frame.last_action_label != null && frame.last_action_seat != null;
+
+      // The seat that just acted: the backend value when present, else the
+      // previous frame's to_move (who was about to move before this frame).
+      const actorSeat = hasBackendLabel
+        ? (frame.last_action_seat as number)
+        : prev
+          ? prev.to_move
+          : humanSeat;
+
       let label: string;
-      if (actorSeat === humanSeat && pendingHumanLabel.current) {
+      if (hasBackendLabel) {
+        label = frame.last_action_label as string;
+        // Consume any pending human label so it doesn't leak to a later frame.
+        if (actorSeat === humanSeat) pendingHumanLabel.current = null;
+      } else if (actorSeat === humanSeat && pendingHumanLabel.current) {
         label = pendingHumanLabel.current;
         pendingHumanLabel.current = null;
       } else {
+        const phaseName =
+          PHASE_NAMES[prev ? prev.view.phase : frame.view.phase] ?? "move";
         label = `${phaseName} action`;
       }
       newEntries.push({

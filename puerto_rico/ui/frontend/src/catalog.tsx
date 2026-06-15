@@ -12,8 +12,13 @@
 
 import { createContext, useContext, useMemo } from "react";
 
-import { GOOD_NAMES } from "./types";
-import type { Catalog, CatalogBuilding, CatalogGood } from "./types";
+import { GOOD_NAMES, ROLE_NAMES } from "./types";
+import type {
+  Catalog,
+  CatalogBuilding,
+  CatalogGood,
+  CatalogRole,
+} from "./types";
 
 const CatalogContext = createContext<Catalog | null>(null);
 
@@ -49,6 +54,26 @@ export function useBuildingInfo(): (id: number) => CatalogBuilding | null {
       for (const b of catalog.buildings) byId.set(b.id, b);
     }
     return (id: number): CatalogBuilding | null => byId.get(id) ?? null;
+  }, [catalog]);
+}
+
+/**
+ * Role reference lookup keyed by Role index. Returns the catalog entry, or a
+ * thin fallback (name only) when the catalog is unavailable / role unknown.
+ */
+export function useRoleInfo(): (role: number) => CatalogRole {
+  const catalog = useContext(CatalogContext);
+  return useMemo(() => {
+    const byRole = new Map<number, CatalogRole>();
+    if (catalog?.roles) {
+      for (const r of catalog.roles) byRole.set(r.role, r);
+    }
+    return (role: number): CatalogRole =>
+      byRole.get(role) ?? {
+        role,
+        name: ROLE_NAMES[role] ?? `role ${role}`,
+        description: "",
+      };
   }, [catalog]);
 }
 

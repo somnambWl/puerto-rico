@@ -15,8 +15,15 @@
 
 import { useMemo } from "react";
 
-import { useBuildingInfo, useGoodInfo } from "../catalog";
-import type { GameView, Highlight } from "../types";
+import { useBuildingInfo, useGoodInfo, useRoleInfo } from "../catalog";
+import { findAction } from "../findAction";
+import { roleHints } from "../roleHints";
+import type {
+  BuildingId,
+  GameView,
+  Highlight,
+  LegalAction,
+} from "../types";
 import {
   GOOD_COLORS,
   GOOD_NAMES,
@@ -25,12 +32,26 @@ import {
   TILE_COLORS,
   TILE_NAMES,
 } from "../types";
-import { BuildingTooltipBody, InfoTooltip } from "./Tooltip";
+import {
+  BuildingTooltipBody,
+  InfoTooltip,
+  RoleTooltipBody,
+} from "./Tooltip";
 
 interface BoardProps {
   view: GameView;
   highlight?: Highlight;
-  onPlantationClick?: (index: number) => void;
+  governorName?: string;
+  toMoveName?: string;
+  /** Hover a shelf building to highlight every copy across player boards. */
+  onBuildingHover?: (id: BuildingId | null) => void;
+  /** Legal actions for the human's current turn (empty otherwise). When a board
+   * element matches a legal action it becomes clickable. */
+  legalActions?: LegalAction[];
+  /** Take the action with this id (click-to-act). No-op if undefined. */
+  onBoardAction?: (id: number) => void;
+  /** Preview-on-hover for a board element's matching action (null = clear). */
+  onBoardHover?: (action: LegalAction | null) => void;
 }
 
 const PHASE_ROLE_SELECTION = 0;
@@ -43,10 +64,29 @@ function hlClass(
   return ghost ? " hl hl-ghost" : " hl";
 }
 
-export function Board({ view, highlight, onPlantationClick }: BoardProps) {
+export function Board({
+  view,
+  highlight,
+  governorName,
+  toMoveName,
+  onBuildingHover,
+  legalActions = [],
+  onBoardAction,
+  onBoardHover,
+}: BoardProps) {
   const roleSelection = view.phase === PHASE_ROLE_SELECTION;
   const buildingInfo = useBuildingInfo();
   const goodInfo = useGoodInfo();
+  const roleInfo = useRoleInfo();
+
+  // Resolve a board element to its matching legal action id (or null = inert).
+  const actionFor = (target: Parameters<typeof findAction>[1]): number | null =>
+    findAction(legalActions, target);
+  const legalById = (id: number | null): LegalAction | null =>
+    id == null ? null : legalActions.find((a) => a.id === id) ?? null;
+  const takeBoardAction = (id: number | null) => {
+    if (id != null && onBoardAction) onBoardAction(id);
+  };
 
   // Group the available buildings by VP, sorted by cost ascending within a row.
   const vpRows = useMemo(() => {
@@ -68,7 +108,12 @@ export function Board({ view, highlight, onPlantationClick }: BoardProps) {
     <div className="board">
       <div className="board-header">
         <span className="phase-tag">{PHASE_NAMES[view.phase] ?? "?"}</span>
-        <span className="muted">governor: P{view.governor}</span>
+        <span className="muted">
+          Governor: {governorName ?? `P${view.governor}`}
+        </span>
+        <span className="board-tomove">
+          To move: {toMoveName ?? `P${view.current_player}`}
+        </span>
         {view.end_triggered && <span className="end-flag">END TRIGGERED</span>}
       </div>
 
@@ -80,24 +125,48 @@ export function Board({ view, highlight, onPlantationClick }: BoardProps) {
             const available = p.taken_by === null;
             const hl =
               highlight && highlight.kind === "role" && highlight.role === p.role;
+            const ri = roleInfo(p.role);
+            const roleActionId = actionFor({ type: "role", role: p.role });
+            const clickable = roleActionId != null;
             return (
-              <div
+              <InfoTooltip
                 key={i}
-                className={
-                  "placard" +
-                  (roleSelection && available ? " placard-available" : "") +
-                  (p.taken_by !== null ? " placard-taken" : "") +
-                  hlClass(hl, highlight?.ghost)
+                content={
+                  <RoleTooltipBody
+                    name={ri.name}
+                    description={ri.description}
+                    hints={roleHints(p.role, view)}
+                    placardDoubloons={p.doubloons}
+                  />
                 }
               >
-                <div className="placard-name">{ROLE_NAMES[p.role] ?? "?"}</div>
-                <div className="placard-doubloons">
-                  {p.doubloons > 0 ? `$${p.doubloons}` : " "}
+                <div
+                  className={
+                    "placard" +
+                    (roleSelection && available ? " placard-available" : "") +
+                    (p.taken_by !== null ? " placard-taken" : "") +
+                    (clickable ? " board-clickable" : "") +
+                    hlClass(hl, highlight?.ghost)
+                  }
+                  onClick={
+                    clickable ? () => takeBoardAction(roleActionId) : undefined
+                  }
+                  onMouseEnter={
+                    clickable
+                      ? () => onBoardHover?.(legalById(roleActionId))
+                      : undefined
+                  }
+                  onMouseLeave={clickable ? () => onBoardHover?.(null) : undefined}
+                >
+                  <div className="placard-name">{ROLE_NAMES[p.role] ?? "?"}</div>
+                  <div className="placard-doubloons">
+                    {p.doubloons > 0 ? `$${p.doubloons}` : " "}
+                  </div>
+                  {p.taken_by !== null && (
+                    <div className="placard-by">P{p.taken_by}</div>
+                  )}
                 </div>
-                {p.taken_by !== null && (
-                  <div className="placard-by">P{p.taken_by}</div>
-                )}
-              </div>
+              </InfoTooltip>
             );
           })}
         </div>
@@ -119,10 +188,22 @@ export function Board({ view, highlight, onPlantationClick }: BoardProps) {
               highlight.kind === "ship" &&
               (highlight.index < 0 || highlight.index === i);
             const color = s.good !== null ? GOOD_COLORS[s.good] : "#444";
+            // Auto-send only when exactly one good can load onto this ship.
+            const loadId = actionFor({ type: "load", ship: i });
+            const clickable = loadId != null;
             return (
               <div
                 key={i}
-                className={"ship cargo-ship" + hlClass(hl, highlight?.ghost)}
+                className={
+                  "ship cargo-ship" +
+                  (clickable ? " board-clickable" : "") +
+                  hlClass(hl, highlight?.ghost)
+                }
+                onClick={clickable ? () => takeBoardAction(loadId) : undefined}
+                onMouseEnter={
+                  clickable ? () => onBoardHover?.(legalById(loadId)) : undefined
+                }
+                onMouseLeave={clickable ? () => onBoardHover?.(null) : undefined}
               >
                 <span className="ship-label">Ship {i + 1}</span>
                 <span className="ship-cap">cap {s.capacity}</span>
@@ -218,21 +299,53 @@ export function Board({ view, highlight, onPlantationClick }: BoardProps) {
         </section>
       </div>
 
-      {/* Face-up plantation row */}
+      {/* Face-up plantation row (+ quarry take) */}
       <section className="board-section">
         <h3>Face-up plantations</h3>
         <div className="plantation-row">
+          {(() => {
+            // Settler quarry take is a single action (TileType.QUARRY == 1),
+            // not tied to a face-up tile, so render a dedicated quarry chip.
+            const quarryId = actionFor({ type: "tile", tile: 1 });
+            if (quarryId == null) return null;
+            return (
+              <button
+                key="quarry"
+                className="plantation-tile board-clickable"
+                style={{ background: TILE_COLORS[1] }}
+                onClick={() => takeBoardAction(quarryId)}
+                onMouseEnter={() => onBoardHover?.(legalById(quarryId))}
+                onMouseLeave={() => onBoardHover?.(null)}
+                title={TILE_NAMES[1]}
+              >
+                {TILE_NAMES[1]}
+              </button>
+            );
+          })()}
           {view.plantation_faceup.map((t, i) => {
             const hl =
               highlight &&
               highlight.kind === "plantation" &&
               highlight.index === i;
+            // A face-up tile of kind K maps to TAKE_TILE(tile=K). TileType is
+            // the same enum the engine uses (face-up values are TileType).
+            const tileId = actionFor({ type: "tile", tile: t });
+            const clickable = tileId != null;
             return (
               <button
                 key={i}
-                className={"plantation-tile" + hlClass(hl, highlight?.ghost)}
+                className={
+                  "plantation-tile" +
+                  (clickable ? " board-clickable" : "") +
+                  hlClass(hl, highlight?.ghost)
+                }
                 style={{ background: TILE_COLORS[t] }}
-                onClick={() => onPlantationClick?.(i)}
+                onClick={clickable ? () => takeBoardAction(tileId) : undefined}
+                onMouseEnter={
+                  clickable ? () => onBoardHover?.(legalById(tileId)) : undefined
+                }
+                onMouseLeave={clickable ? () => onBoardHover?.(null) : undefined}
+                disabled={!clickable}
                 title={TILE_NAMES[t]}
               >
                 {TILE_NAMES[t]}
@@ -255,10 +368,13 @@ export function Board({ view, highlight, onPlantationClick }: BoardProps) {
               <div className="vp-row-buildings">
                 {items.map(({ id, n, large }) => {
                   const meta = buildingInfo(id);
+                  const max = meta?.supply ?? n;
                   const hl =
                     highlight &&
                     highlight.kind === "building" &&
                     highlight.buildingId === id;
+                  const buildId = actionFor({ type: "build", building: id });
+                  const clickable = buildId != null;
                   return (
                     <InfoTooltip
                       key={id}
@@ -271,6 +387,8 @@ export function Board({ view, highlight, onPlantationClick }: BoardProps) {
                             capacity={meta.capacity}
                             description={meta.description}
                             produces={meta.produces}
+                            available={n}
+                            max={max}
                           />
                         ) : (
                           <div className="tt-title">building {id}</div>
@@ -282,14 +400,28 @@ export function Board({ view, highlight, onPlantationClick }: BoardProps) {
                           "shelf-building" +
                           (large ? " shelf-large" : "") +
                           (meta?.is_production ? " shelf-production" : "") +
+                          (clickable ? " board-clickable" : "") +
                           hlClass(hl, highlight?.ghost)
                         }
+                        onClick={
+                          clickable
+                            ? () => takeBoardAction(buildId)
+                            : undefined
+                        }
+                        onMouseEnter={() => {
+                          onBuildingHover?.(id);
+                          if (clickable) onBoardHover?.(legalById(buildId));
+                        }}
+                        onMouseLeave={() => {
+                          onBuildingHover?.(null);
+                          if (clickable) onBoardHover?.(null);
+                        }}
                       >
                         <span className="shelf-name">
                           {meta?.name ?? `#${id}`}
                         </span>
                         <span className="shelf-meta">
-                          ${meta?.cost} · x{n}
+                          ${meta?.cost} · {n}/{max} left
                         </span>
                       </div>
                     </InfoTooltip>

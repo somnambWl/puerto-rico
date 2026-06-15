@@ -19,6 +19,7 @@ See `conversation-notes.md` for rationale and implementation details.
 | E6 | Frontend: tooltips, step/pause AI playback, VP-sorted shelf, good-value hints, preview integration | done | E5 |
 | E7 | RL strategy audit: opening roles, build sequences, trading/shipping behavior | done | E4 |
 | E8 | Refine RL if strategy audit finds gaps (turn E7 findings into targeted improvements) | done | E7 |
+| E9 | Playtest UX overhaul: correct building supply, public VP, real log labels, role/turn-order info, clickable board, drag-drop colonists | done | E6 |
 
 ## Epic: engine-core
 Design: `design/00-overview-and-architecture.md`, `design/01-engine-core-and-state.md`

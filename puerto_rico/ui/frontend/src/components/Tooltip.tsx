@@ -70,7 +70,7 @@ export function InfoTooltip({ content, children, className }: InfoTooltipProps) 
   );
 }
 
-/** Standard building tooltip body. */
+/** Standard building tooltip body. `supply` shows "available / max" when given. */
 export function BuildingTooltipBody({
   name,
   cost,
@@ -78,6 +78,8 @@ export function BuildingTooltipBody({
   capacity,
   description,
   produces,
+  available,
+  max,
 }: {
   name: string;
   cost: number;
@@ -85,6 +87,8 @@ export function BuildingTooltipBody({
   capacity: number;
   description?: string;
   produces?: string | null;
+  available?: number;
+  max?: number;
 }) {
   return (
     <div className="tt-building">
@@ -109,6 +113,46 @@ export function BuildingTooltipBody({
         <div className="tt-produces">Produces {produces}</div>
       )}
       {description && <div className="tt-desc">{description}</div>}
+      {max !== undefined && (
+        <div className="tt-supply">
+          {available ?? 0} of {max} left
+        </div>
+      )}
+    </div>
+  );
+}
+
+/**
+ * Role tooltip body: the catalog description plus dynamic, quantitative hints
+ * computed from the current view (e.g. colonists on the ship, accumulated
+ * placard doubloons). `hints` is a pre-computed list of one-liners and
+ * `placardDoubloons` (if > 0) renders the accumulated bonus.
+ */
+export function RoleTooltipBody({
+  name,
+  description,
+  hints,
+  placardDoubloons,
+}: {
+  name: string;
+  description?: string;
+  hints: string[];
+  placardDoubloons?: number;
+}) {
+  return (
+    <div className="tt-building">
+      <div className="tt-title">{name}</div>
+      {description && <div className="tt-desc">{description}</div>}
+      {hints.length > 0 && (
+        <ul className="tt-hints">
+          {hints.map((h, i) => (
+            <li key={i}>{h}</li>
+          ))}
+        </ul>
+      )}
+      {placardDoubloons !== undefined && placardDoubloons > 0 && (
+        <div className="tt-produces">+${placardDoubloons} accumulated on placard</div>
+      )}
     </div>
   );
 }

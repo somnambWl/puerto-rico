@@ -324,8 +324,63 @@ button {
   font-weight: 700;
 }
 .player-vp {
+  display: flex;
+  gap: 8px;
+  align-items: center;
   color: var(--accent);
   font-weight: 600;
+}
+.vp-chips {
+  color: var(--muted);
+  font-weight: 600;
+  font-size: 12px;
+}
+.vp-total {
+  color: var(--accent);
+  font-weight: 700;
+}
+.player-order {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  margin-right: 6px;
+  border-radius: 50%;
+  background: var(--panel-2);
+  border: 1px solid var(--line);
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--muted);
+}
+.governor-badge {
+  margin-left: 8px;
+  padding: 1px 7px;
+  border-radius: 10px;
+  background: #4d3b16;
+  color: var(--accent);
+  font-size: 11px;
+  font-weight: 700;
+}
+.tomove-badge {
+  margin-left: 8px;
+  padding: 1px 7px;
+  border-radius: 10px;
+  background: #234d23;
+  color: #aef0ae;
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+}
+.board-tomove {
+  color: var(--active);
+  font-weight: 600;
+}
+/* building-type highlight: every city slot holding the hovered building type */
+.building-type-hl {
+  outline: 2px solid var(--hl);
+  outline-offset: 1px;
+  box-shadow: 0 0 8px rgba(255, 211, 107, 0.5);
 }
 .player-stats {
   display: flex;
@@ -417,6 +472,76 @@ button {
   display: flex;
   flex-direction: column;
   gap: 8px;
+}
+
+/* ----------------- direct manipulation (click / drag) ---------------- */
+/* A board element that maps to a currently-legal action. */
+.board-clickable {
+  cursor: pointer;
+  transition: filter 0.1s ease, box-shadow 0.1s ease;
+}
+.board-clickable:hover {
+  filter: brightness(1.15);
+  box-shadow: 0 0 0 2px var(--hl);
+}
+
+/* Mayor placement panel on the human board. */
+.mayor-placement {
+  margin: 6px 0;
+  padding: 6px 8px;
+  background: var(--panel-2);
+  border: 1px solid var(--line);
+  border-radius: 6px;
+}
+.mayor-placement-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 6px;
+}
+.mayor-placement-label {
+  font-size: 12px;
+  color: var(--accent);
+}
+.mayor-store-btn {
+  padding: 4px 10px;
+  font-size: 12px;
+}
+.mayor-supply {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+.mayor-remaining {
+  margin-left: auto;
+  font-size: 12px;
+}
+.colonist-token {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: var(--panel);
+  border: 1px solid var(--line);
+  cursor: grab;
+}
+.colonist-token:active {
+  cursor: grabbing;
+}
+
+/* Empty/available circles become drop targets while placing colonists. */
+.drop-target {
+  cursor: pointer;
+  outline: 1px dashed var(--accent);
+  outline-offset: -2px;
+}
+.drop-target.drop-active {
+  outline: 2px solid var(--hl);
+  background: rgba(255, 211, 107, 0.12);
 }
 
 /* --------------------------- action prompt --------------------------- */
@@ -596,6 +721,17 @@ button {
 .tt-desc {
   line-height: 1.35;
 }
+.tt-hints {
+  margin: 4px 0 0;
+  padding-left: 16px;
+  line-height: 1.4;
+  color: var(--text);
+}
+.tt-supply {
+  margin-top: 4px;
+  color: var(--muted);
+  font-weight: 600;
+}
 
 /* --------------------------- trading house legend --------------------------- */
 .good-chip strong {
@@ -653,16 +789,28 @@ button {
 }
 
 /* --------------------------- playback bar --------------------------- */
+/* Persistent in the game header: always shows the speed selector, and gains
+   the move counter + transport controls while AI frames animate (.playback-active). */
 .playback-bar {
   display: flex;
   align-items: center;
-  justify-content: space-between;
   gap: 12px;
   flex-wrap: wrap;
+  margin-left: auto;
   background: var(--panel-2);
-  border: 1px solid var(--accent);
+  border: 1px solid var(--line);
   border-radius: 8px;
-  padding: 8px 12px;
+  padding: 4px 10px;
+}
+.playback-bar.playback-active {
+  border-color: var(--accent);
+}
+.pb-speed-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  color: var(--muted);
 }
 .playback-info {
   display: flex;
@@ -705,6 +853,70 @@ button {
   border: 1px solid var(--line);
   border-radius: 6px;
   font-size: 12px;
+}
+.pb-hint {
+  width: 100%;
+  font-size: 11px;
+  color: var(--muted);
+  text-align: right;
+}
+
+/* --------------------------- guidance banner --------------------------- */
+.guidance-banner {
+  background: var(--panel-2);
+  border-left: 3px solid var(--accent);
+  border-radius: 4px;
+  padding: 8px 12px;
+  margin-bottom: 10px;
+  color: var(--text);
+  font-size: 14px;
+  line-height: 1.4;
+}
+
+/* --------------------------- standings --------------------------- */
+.standings {
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 10px;
+}
+.standings-table {
+  width: 100%;
+  border-collapse: collapse;
+}
+.standings-table td {
+  padding: 4px 6px;
+  border-bottom: 1px solid var(--line);
+}
+.standings-table tr:last-child td {
+  border-bottom: none;
+}
+.standings-name {
+  font-weight: 600;
+}
+.standings-you-tag {
+  margin-left: 6px;
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--accent);
+}
+.standings-score {
+  text-align: right;
+  font-weight: 700;
+  white-space: nowrap;
+}
+.standings-db {
+  text-align: right;
+  color: var(--muted);
+  font-size: 12px;
+  white-space: nowrap;
+}
+.standings-leader {
+  background: rgba(224, 164, 75, 0.12);
+}
+.standings-leader .standings-score {
+  color: var(--accent);
 }
 
 /* --------------------------- preview panel --------------------------- */

@@ -25,14 +25,37 @@ import { PlaybackBar } from "./components/PlaybackBar";
 import { PlayerBoard } from "./components/PlayerBoard";
 import { ActionPrompt } from "./components/ActionPrompt";
 import { PreviewPanel } from "./components/PreviewPanel";
+import { Standings } from "./components/Standings";
 import { useGameState } from "./hooks/useGameState";
 import { useActionPreview } from "./hooks/useActionPreview";
 import { useLogEntries } from "./hooks/useLogEntries";
-import type { Catalog, Highlight } from "./types";
+import type {
+  BuildingId,
+  Catalog,
+  Highlight,
+  LegalAction,
+} from "./types";
 
 interface GameSetup {
   gameId: string;
   humanSeat: number;
+}
+
+/** Derive a Board highlight directly from a legal action's structured fields. */
+function highlightForAction(action: LegalAction): Highlight {
+  if (action.building != null) {
+    return { kind: "building", buildingId: action.building };
+  }
+  if (action.role != null) {
+    return { kind: "role", role: action.role };
+  }
+  if (action.kind === "ship") {
+    return { kind: "ship", index: action.ship ?? -1 };
+  }
+  if (action.good != null) {
+    return { kind: "good", good: action.good };
+  }
+  return null;
 }
 
 export default function App() {
@@ -211,6 +234,10 @@ function GameView({ gameId, humanSeat, onNewGame }: GameViewProps) {
   const buildingInfo = useBuildingInfo();
 
   const [highlight, setHighlight] = useState<Highlight>(null);
+  // Highlight every city slot (across all boards) holding this building type.
+  const [highlightBuilding, setHighlightBuilding] = useState<BuildingId | null>(
+    null,
+  );
 
   const { logEntries, recordHumanAction } = useLogEntries(logFeed, humanSeat);
   const {
@@ -236,10 +263,85 @@ function GameView({ gameId, humanSeat, onNewGame }: GameViewProps) {
     [currentState, recordHumanAction, sendAction],
   );
 
+  // Click/drop a board element to act. Guarded by the same conditions as the
+  // action prompt so a stray click during animation / an AI turn is ignored.
+  const onBoardAction = useCallback(
+    (id: number) => {
+      if (
+        isAnimating ||
+        !currentState ||
+        currentState.terminal ||
+        !currentState.to_move_is_human
+      ) {
+        return;
+      }
+      if (!currentState.legal_actions.some((a) => a.id === id)) return;
+      setHighlight(null);
+      clearPreview();
+      onAction(id);
+    },
+    [isAnimating, currentState, onAction, clearPreview],
+  );
+
+  // Hovering a clickable board element previews its action (same as a button).
+  const onBoardHover = useCallback(
+    (action: LegalAction | null) => {
+      if (isAnimating) return;
+      setHighlight(action ? highlightForAction(action) : null);
+      onPreview(action);
+    },
+    [isAnimating, onPreview],
+  );
+
   // Disable / clear preview while AI playback is animating.
   useEffect(() => {
     if (isAnimating) clearPreview();
   }, [isAnimating, clearPreview]);
+
+  // Global keyboard shortcuts for AI playback. The human found AI pacing hard
+  // to control with the mouse, so:
+  //   Space — toggle Pause/Resume while animating; if paused with frames
+  //           pending, Step one frame instead.
+  //   →     — Step one AI frame (when frames pending).
+  //   S     — Skip to the end of the current AI sequence.
+  // Guarded so they never fire while typing in a form control, and cleaned up
+  // on unmount.
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      const target = e.target as HTMLElement | null;
+      const tag = target?.tagName;
+      if (
+        tag === "INPUT" ||
+        tag === "TEXTAREA" ||
+        tag === "SELECT" ||
+        target?.isContentEditable
+      ) {
+        return;
+      }
+      if (!isAnimating) return;
+
+      if (e.code === "Space") {
+        e.preventDefault();
+        if (isPaused) {
+          // Paused: step one frame if any remain, else resume.
+          if (pendingCount > 0) step();
+          else resume();
+        } else {
+          pause();
+        }
+      } else if (e.key === "ArrowRight") {
+        if (pendingCount > 0) {
+          e.preventDefault();
+          step();
+        }
+      } else if (e.key === "s" || e.key === "S") {
+        e.preventDefault();
+        skipToEnd();
+      }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [isAnimating, isPaused, pendingCount, pause, resume, step, skipToEnd]);
 
   if (!currentState) {
     return (
@@ -262,6 +364,18 @@ function GameView({ gameId, humanSeat, onNewGame }: GameViewProps) {
     .map((_, seat) => seat)
     .filter((seat) => seat !== humanSeat);
 
+  // Turn order for this round's role selection: clockwise from the governor.
+  // orderNumberOf[seat] is the 1-based position (governor = 1).
+  const numPlayers = view.players.length;
+  const orderNumberOf: number[] = view.players.map((_, seat) => {
+    const offset = (seat - view.governor + numPlayers) % numPlayers;
+    return offset + 1;
+  });
+
+  const governorName = playerNames[view.governor] ?? `P${view.governor}`;
+  const toMoveName =
+    playerNames[view.current_player] ?? `P${view.current_player}`;
+
   // The preview ghost-highlight wins over the hover highlight when present.
   const activeHighlight = previewHighlight ?? highlight;
 
@@ -279,6 +393,20 @@ function GameView({ gameId, humanSeat, onNewGame }: GameViewProps) {
         <span>
           Game {gameId.slice(0, 8)} · you are P{humanSeat}
         </span>
+        <PlaybackBar
+          active={isAnimating}
+          index={playbackIndex}
+          total={playbackTotal}
+          pendingCount={pendingCount}
+          isPaused={isPaused}
+          speed={speed}
+          latestLabel={latestMoveLabel}
+          onPause={pause}
+          onResume={resume}
+          onStep={step}
+          onSkip={skipToEnd}
+          onSpeed={setSpeed}
+        />
         <span className={"conn conn-" + status}>{status}</span>
         {error && <span className="error">{error}</span>}
       </header>
@@ -288,27 +416,13 @@ function GameView({ gameId, humanSeat, onNewGame }: GameViewProps) {
           <Board
             view={view}
             highlight={activeHighlight}
-            onPlantationClick={() => {
-              /* visual highlight toggle handled via hover; click is a no-op
-                 placeholder so the row reads as interactive */
-            }}
+            governorName={governorName}
+            toMoveName={toMoveName}
+            onBuildingHover={setHighlightBuilding}
+            legalActions={promptDisabled ? [] : currentState.legal_actions}
+            onBoardAction={onBoardAction}
+            onBoardHover={onBoardHover}
           />
-
-          {isAnimating && (
-            <PlaybackBar
-              index={playbackIndex}
-              total={playbackTotal}
-              pendingCount={pendingCount}
-              isPaused={isPaused}
-              speed={speed}
-              latestLabel={latestMoveLabel}
-              onPause={pause}
-              onResume={resume}
-              onStep={step}
-              onSkip={skipToEnd}
-              onSpeed={setSpeed}
-            />
-          )}
 
           <PlayerBoard
             playerView={view.players[humanSeat]}
@@ -316,6 +430,12 @@ function GameView({ gameId, humanSeat, onNewGame }: GameViewProps) {
             isHuman
             name={playerNames[humanSeat]}
             active={view.current_player === humanSeat}
+            isGovernor={view.governor === humanSeat}
+            orderNumber={orderNumberOf[humanSeat]}
+            highlightBuilding={highlightBuilding}
+            onBuildingHover={setHighlightBuilding}
+            legalActions={promptDisabled ? [] : currentState.legal_actions}
+            onBoardAction={onBoardAction}
           />
 
           <ActionPrompt
@@ -325,6 +445,7 @@ function GameView({ gameId, humanSeat, onNewGame }: GameViewProps) {
             aiThinking={aiThinking}
             onHighlight={setHighlight}
             onPreview={onPreview}
+            view={view}
           />
 
           <PreviewPanel
@@ -335,6 +456,11 @@ function GameView({ gameId, humanSeat, onNewGame }: GameViewProps) {
         </main>
 
         <aside className="game-side">
+          <Standings
+            view={view}
+            playerNames={playerNames}
+            humanSeat={humanSeat}
+          />
           <div className="opponents">
             {others.map((seat) => (
               <PlayerBoard
@@ -344,6 +470,10 @@ function GameView({ gameId, humanSeat, onNewGame }: GameViewProps) {
                 isHuman={false}
                 name={playerNames[seat]}
                 active={view.current_player === seat}
+                isGovernor={view.governor === seat}
+                orderNumber={orderNumberOf[seat]}
+                highlightBuilding={highlightBuilding}
+                onBuildingHover={setHighlightBuilding}
               />
             ))}
           </div>

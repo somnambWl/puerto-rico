@@ -14,12 +14,41 @@
 // Wire protocol (schemas.py)                                                   //
 // --------------------------------------------------------------------------- //
 
-/** One legal action offered to the human (LegalActionMsg). */
+/** A BuildingId (engine enum value). */
+export type BuildingId = number;
+
+/** Where a PLACE_COLONIST drops the colonist (ColonistTarget). */
+export interface ColonistTarget {
+  kind: "city" | "island" | "store";
+  index?: number | null;
+}
+
+/** One legal action offered to the human (LegalActionMsg).
+ *
+ * The structured fields (role/tile/building/good/ship/wharf/colonist_target)
+ * are decoded server-side from the engine action so the board can map an
+ * element directly to the action id (click-to-act / drag-and-drop). Only the
+ * field(s) relevant to `kind` are populated; the rest are null/false.
+ */
 export interface LegalAction {
   id: number;
   label: string;
   /** Coarse category for grouping: role/tile/build/colonist/sell/ship/choose/pass. */
   kind: string;
+  /** SELECT_ROLE: Role enum value. */
+  role?: number | null;
+  /** TAKE_TILE: TileType enum value. */
+  tile?: number | null;
+  /** BUILD: BuildingId enum value. */
+  building?: number | null;
+  /** SELL / LOAD / CHOOSE: Good enum value. */
+  good?: number | null;
+  /** LOAD onto a cargo ship: target ship index. */
+  ship?: number | null;
+  /** LOAD via the wharf (ship all of one good to the supply). */
+  wharf?: boolean;
+  /** PLACE_COLONIST: decoded drop target. */
+  colonist_target?: ColonistTarget | null;
 }
 
 /** Per-player final score breakdown (Result.players entry). */
@@ -51,6 +80,11 @@ export interface StateMsg {
   result: Result | null;
   /** True for hypothetical frames from POST /games/{id}/preview. */
   preview?: boolean;
+  /** Human-readable label of the action that produced this frame (null on the
+   * initial connect/reset frame and on preview frames). */
+  last_action_label?: string | null;
+  /** Seat that took the action that produced this frame (null as above). */
+  last_action_seat?: number | null;
 }
 
 // --------------------------------------------------------------------------- //
@@ -71,6 +105,15 @@ export interface CatalogBuilding {
   /** "production" | "large" | "small". */
   kind: string;
   description: string;
+  /** Max copies of this building in the game (initial supply). */
+  supply: number;
+}
+
+/** One role entry from /catalog (privilege + shared action reference). */
+export interface CatalogRole {
+  role: number; // Role
+  name: string;
+  description: string;
 }
 
 /** One good entry from /catalog (base sell value). */
@@ -83,6 +126,7 @@ export interface CatalogGood {
 export interface Catalog {
   buildings: CatalogBuilding[];
   goods: CatalogGood[];
+  roles: CatalogRole[];
 }
 
 /** Client -> server: chosen action id (ActionMsg). */
@@ -152,6 +196,8 @@ export interface PlayerView {
   goods: number[]; // length-5, indexed by Good
   stored_colonists: number;
   vp_chips: number | null;
+  /** Current total VP if the game ended now (vp_chips + building VP + bonuses). */
+  score: number;
   roles_taken_this_round: number;
 }
 
