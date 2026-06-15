@@ -23,6 +23,8 @@ interface ActionPromptProps {
   /** True specifically because it is an AI seat's turn (shows "thinking"). */
   aiThinking: boolean;
   onHighlight: (h: Highlight) => void;
+  /** Request a state preview for the hovered/focused action (null = clear). */
+  onPreview?: (action: LegalAction | null) => void;
 }
 
 // Group order + friendly headers for the coarse `kind` categories
@@ -85,6 +87,7 @@ export function ActionPrompt({
   disabled,
   aiThinking,
   onHighlight,
+  onPreview,
 }: ActionPromptProps) {
   if (aiThinking) {
     return (
@@ -132,10 +135,25 @@ export function ActionPrompt({
                 disabled={disabled}
                 onClick={() => {
                   onHighlight(null);
+                  onPreview?.(null);
                   onAction(a.id);
                 }}
-                onMouseEnter={() => onHighlight(highlightFor(a))}
-                onMouseLeave={() => onHighlight(null)}
+                onMouseEnter={() => {
+                  onHighlight(highlightFor(a));
+                  if (!disabled) onPreview?.(a);
+                }}
+                onFocus={() => {
+                  onHighlight(highlightFor(a));
+                  if (!disabled) onPreview?.(a);
+                }}
+                onMouseLeave={() => {
+                  onHighlight(null);
+                  onPreview?.(null);
+                }}
+                onBlur={() => {
+                  onHighlight(null);
+                  onPreview?.(null);
+                }}
               >
                 {a.label}
               </button>

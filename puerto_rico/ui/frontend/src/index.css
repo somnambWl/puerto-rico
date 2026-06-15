@@ -545,3 +545,228 @@ button {
   display: flex;
   gap: 6px;
 }
+
+/* --------------------------- tooltip --------------------------- */
+.tt-wrap {
+  display: inline-block;
+}
+/* In grid contexts (shelf, city slots) the wrapper should not become an extra
+   box — `display: contents` lets the inner element be the grid/flex child so
+   large buildings keep their `grid-column: span 2`. The fixed-position tooltip
+   floats regardless of this. */
+.city-slot-wrap,
+.vp-row-buildings .tt-wrap {
+  display: contents;
+}
+.tooltip {
+  position: fixed;
+  z-index: 50;
+  background: #0f0d09;
+  border: 1px solid var(--accent);
+  border-radius: 8px;
+  padding: 8px 10px;
+  box-shadow: 0 6px 24px rgba(0, 0, 0, 0.6);
+  pointer-events: none;
+  font-size: 12px;
+  color: var(--text);
+}
+.tt-title {
+  font-weight: 700;
+  color: var(--accent);
+  margin-bottom: 4px;
+}
+.tt-stats {
+  display: flex;
+  gap: 10px;
+  margin-bottom: 4px;
+}
+.tt-stat {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  color: var(--muted);
+}
+.tt-colonist {
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: #d9b38c;
+  border: 1px solid #6b4f33;
+}
+.tt-produces {
+  color: var(--active);
+  margin-bottom: 3px;
+}
+.tt-desc {
+  line-height: 1.35;
+}
+
+/* --------------------------- trading house legend --------------------------- */
+.good-chip strong {
+  font-weight: 800;
+}
+.goods-legend {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin-top: 6px;
+  font-size: 11px;
+  color: var(--muted);
+}
+.goods-legend-label {
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+.goods-legend-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+/* --------------------------- buildings shelf (VP rows) --------------------------- */
+.building-shelf-rows {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.vp-row {
+  display: flex;
+  align-items: stretch;
+  gap: 8px;
+}
+.vp-row-label {
+  flex: 0 0 44px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: 700;
+  color: var(--accent);
+  background: var(--panel-2);
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  font-size: 12px;
+}
+.vp-row-buildings {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+.shelf-production {
+  border-left: 3px solid var(--active);
+}
+
+/* --------------------------- playback bar --------------------------- */
+.playback-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+  background: var(--panel-2);
+  border: 1px solid var(--accent);
+  border-radius: 8px;
+  padding: 8px 12px;
+}
+.playback-info {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.playback-counter {
+  font-weight: 700;
+  color: var(--accent);
+}
+.playback-label {
+  font-size: 12px;
+  color: var(--muted);
+}
+.playback-controls {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+}
+.pb-btn {
+  padding: 5px 10px;
+  background: var(--panel);
+  color: var(--text);
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  font-weight: 600;
+  font-size: 12px;
+}
+.pb-btn:hover:not(:disabled) {
+  border-color: var(--accent);
+}
+.pb-btn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+.pb-speed {
+  padding: 5px 8px;
+  background: var(--panel);
+  color: var(--text);
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  font-size: 12px;
+}
+
+/* --------------------------- preview panel --------------------------- */
+.preview-panel {
+  background: var(--panel-2);
+  border: 1px dashed var(--accent);
+  border-radius: 8px;
+  padding: 10px;
+  /* Float above the board so it is always visible on hover, not below the fold. */
+  position: fixed;
+  right: 16px;
+  bottom: 16px;
+  z-index: 60;
+  min-width: 240px;
+  max-width: 340px;
+  box-shadow: 0 8px 28px rgba(0, 0, 0, 0.55);
+}
+.preview-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 6px;
+}
+.preview-tag {
+  background: var(--accent);
+  color: #1a1409;
+  font-weight: 700;
+  font-size: 11px;
+  text-transform: uppercase;
+  padding: 1px 8px;
+  border-radius: 8px;
+}
+.preview-action-label {
+  font-weight: 600;
+}
+.preview-lines {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.preview-line {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  font-size: 13px;
+  border-bottom: 1px solid var(--line);
+  padding-bottom: 2px;
+}
+.preview-line-label {
+  color: var(--muted);
+}
+.preview-line-change {
+  font-weight: 600;
+}
+
+/* ghost (preview) highlight: dashed, softer than the solid hover outline */
+.hl-ghost {
+  outline-style: dashed;
+  outline-color: var(--accent);
+}

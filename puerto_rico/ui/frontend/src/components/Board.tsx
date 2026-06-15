@@ -2,17 +2,22 @@
  * Board — the shared table state rendered from `view`.
  *
  * Role placards (with accumulated doubloons; available roles highlighted during
- * role selection), the colonist ship, cargo ships, the trading house, supplies
- * (colonists + VP chips remaining), the face-up plantation row (clickable), and
- * the buildings-available shelf (from buildings_supply).
+ * role selection), the colonist ship, cargo ships, the trading house (with each
+ * good's base sell value + a value legend), supplies, the face-up plantation
+ * row, and the buildings-available shelf grouped into VP rows (deluxe 1897
+ * layout). Buildings (shelf + occupied city slots elsewhere) carry hover
+ * tooltips so players don't memorize effects.
  *
  * `highlight` is a best-effort signal from a hovered action (ActionPrompt) used
- * to outline the referenced element.
+ * to outline the referenced element; a `ghost` highlight (from action preview)
+ * renders dashed.
  */
 
+import { useMemo } from "react";
+
+import { useBuildingInfo, useGoodInfo } from "../catalog";
 import type { GameView, Highlight } from "../types";
 import {
-  BUILDINGS,
   GOOD_COLORS,
   GOOD_NAMES,
   PHASE_NAMES,
@@ -20,6 +25,7 @@ import {
   TILE_COLORS,
   TILE_NAMES,
 } from "../types";
+import { BuildingTooltipBody, InfoTooltip } from "./Tooltip";
 
 interface BoardProps {
   view: GameView;
@@ -29,8 +35,34 @@ interface BoardProps {
 
 const PHASE_ROLE_SELECTION = 0;
 
+function hlClass(
+  active: boolean | null | undefined,
+  ghost: boolean | undefined,
+): string {
+  if (!active) return "";
+  return ghost ? " hl hl-ghost" : " hl";
+}
+
 export function Board({ view, highlight, onPlantationClick }: BoardProps) {
   const roleSelection = view.phase === PHASE_ROLE_SELECTION;
+  const buildingInfo = useBuildingInfo();
+  const goodInfo = useGoodInfo();
+
+  // Group the available buildings by VP, sorted by cost ascending within a row.
+  const vpRows = useMemo(() => {
+    const rows = new Map<number, { id: number; n: number; cost: number; large: boolean }[]>();
+    for (const [idStr, n] of Object.entries(view.buildings_supply)) {
+      if (n <= 0) continue;
+      const id = Number(idStr);
+      const meta = buildingInfo(id);
+      const vp = meta?.vp ?? 0;
+      const arr = rows.get(vp) ?? [];
+      arr.push({ id, n, cost: meta?.cost ?? 0, large: meta?.is_large ?? false });
+      rows.set(vp, arr);
+    }
+    for (const arr of rows.values()) arr.sort((a, b) => a.cost - b.cost);
+    return [...rows.entries()].sort((a, b) => a[0] - b[0]);
+  }, [view.buildings_supply, buildingInfo]);
 
   return (
     <div className="board">
@@ -55,12 +87,12 @@ export function Board({ view, highlight, onPlantationClick }: BoardProps) {
                   "placard" +
                   (roleSelection && available ? " placard-available" : "") +
                   (p.taken_by !== null ? " placard-taken" : "") +
-                  (hl ? " hl" : "")
+                  hlClass(hl, highlight?.ghost)
                 }
               >
                 <div className="placard-name">{ROLE_NAMES[p.role] ?? "?"}</div>
                 <div className="placard-doubloons">
-                  {p.doubloons > 0 ? `$${p.doubloons}` : " "}
+                  {p.doubloons > 0 ? `$${p.doubloons}` : " "}
                 </div>
                 {p.taken_by !== null && (
                   <div className="placard-by">P{p.taken_by}</div>
@@ -84,7 +116,10 @@ export function Board({ view, highlight, onPlantationClick }: BoardProps) {
               highlight && highlight.kind === "ship" && highlight.index === i;
             const color = s.good !== null ? GOOD_COLORS[s.good] : "#444";
             return (
-              <div key={i} className={"ship cargo-ship" + (hl ? " hl" : "")}>
+              <div
+                key={i}
+                className={"ship cargo-ship" + hlClass(hl, highlight?.ghost)}
+              >
                 <span className="ship-label">Ship {i + 1}</span>
                 <span className="ship-cap">cap {s.capacity}</span>
                 <span className="ship-fill">
@@ -108,16 +143,37 @@ export function Board({ view, highlight, onPlantationClick }: BoardProps) {
             {view.trading_house.length === 0 && (
               <span className="muted">empty</span>
             )}
-            {view.trading_house.map((g, i) => (
-              <span
-                key={i}
-                className="good-chip"
-                style={{ background: GOOD_COLORS[g] }}
-                title={GOOD_NAMES[g]}
-              >
-                {GOOD_NAMES[g]}
-              </span>
-            ))}
+            {view.trading_house.map((g, i) => {
+              const gi = goodInfo(g);
+              const hl =
+                highlight && highlight.kind === "good" && highlight.good === g;
+              return (
+                <span
+                  key={i}
+                  className={"good-chip" + hlClass(hl, highlight?.ghost)}
+                  style={{ background: GOOD_COLORS[g] }}
+                  title={`${gi.name}: base ${gi.base_value}`}
+                >
+                  {gi.name} <strong>${gi.base_value}</strong>
+                </span>
+              );
+            })}
+          </div>
+          {/* Always-visible base-value legend. */}
+          <div className="goods-legend">
+            <span className="goods-legend-label">base values:</span>
+            {view.goods_supply.map((_, g) => {
+              const gi = goodInfo(g);
+              return (
+                <span key={g} className="goods-legend-item" title={gi.name}>
+                  <span
+                    className="good-dot"
+                    style={{ background: GOOD_COLORS[g] }}
+                  />
+                  {gi.name} ${gi.base_value}
+                </span>
+              );
+            })}
           </div>
         </section>
 
@@ -170,7 +226,7 @@ export function Board({ view, highlight, onPlantationClick }: BoardProps) {
             return (
               <button
                 key={i}
-                className={"plantation-tile" + (hl ? " hl" : "")}
+                className={"plantation-tile" + hlClass(hl, highlight?.ghost)}
                 style={{ background: TILE_COLORS[t] }}
                 onClick={() => onPlantationClick?.(i)}
                 title={TILE_NAMES[t]}
@@ -185,37 +241,59 @@ export function Board({ view, highlight, onPlantationClick }: BoardProps) {
         </div>
       </section>
 
-      {/* Buildings shelf */}
+      {/* Buildings shelf, grouped into VP rows (deluxe layout) */}
       <section className="board-section">
         <h3>Buildings available</h3>
-        <div className="building-shelf">
-          {Object.entries(view.buildings_supply)
-            .map(([id, n]) => [Number(id), n] as [number, number])
-            .filter(([, n]) => n > 0)
-            .sort((a, b) => a[0] - b[0])
-            .map(([id, n]) => {
-              const meta = BUILDINGS[id];
-              const hl =
-                highlight &&
-                highlight.kind === "building" &&
-                highlight.buildingId === id;
-              return (
-                <div
-                  key={id}
-                  className={
-                    "shelf-building" +
-                    (meta?.large ? " shelf-large" : "") +
-                    (hl ? " hl" : "")
-                  }
-                  title={meta?.name}
-                >
-                  <span className="shelf-name">{meta?.name ?? `#${id}`}</span>
-                  <span className="shelf-meta">
-                    ${meta?.cost} · {meta?.vp}vp · x{n}
-                  </span>
-                </div>
-              );
-            })}
+        <div className="building-shelf-rows">
+          {vpRows.map(([vp, items]) => (
+            <div key={vp} className="vp-row">
+              <div className="vp-row-label">{vp} VP</div>
+              <div className="vp-row-buildings">
+                {items.map(({ id, n, large }) => {
+                  const meta = buildingInfo(id);
+                  const hl =
+                    highlight &&
+                    highlight.kind === "building" &&
+                    highlight.buildingId === id;
+                  return (
+                    <InfoTooltip
+                      key={id}
+                      content={
+                        meta ? (
+                          <BuildingTooltipBody
+                            name={meta.name}
+                            cost={meta.cost}
+                            vp={meta.vp}
+                            capacity={meta.capacity}
+                            description={meta.description}
+                            produces={meta.produces}
+                          />
+                        ) : (
+                          <div className="tt-title">building {id}</div>
+                        )
+                      }
+                    >
+                      <div
+                        className={
+                          "shelf-building" +
+                          (large ? " shelf-large" : "") +
+                          (meta?.is_production ? " shelf-production" : "") +
+                          hlClass(hl, highlight?.ghost)
+                        }
+                      >
+                        <span className="shelf-name">
+                          {meta?.name ?? `#${id}`}
+                        </span>
+                        <span className="shelf-meta">
+                          ${meta?.cost} · x{n}
+                        </span>
+                      </div>
+                    </InfoTooltip>
+                  );
+                })}
+              </div>
+            </div>
+          ))}
         </div>
       </section>
     </div>

@@ -8,7 +8,7 @@
  * them to the FastAPI backend on :8000.
  */
 
-import type { StateMsg } from "./types";
+import type { Catalog, StateMsg } from "./types";
 
 export type Opponent = "heuristic" | "rl";
 
@@ -49,6 +49,37 @@ export async function getState(gameId: string): Promise<StateMsg> {
   const res = await fetch(`/games/${gameId}`);
   if (!res.ok) {
     throw new Error(`getState failed: ${res.status} ${await res.text()}`);
+  }
+  return (await res.json()) as StateMsg;
+}
+
+/** GET /catalog — static building + good reference data (fetch once). */
+export async function getCatalog(): Promise<Catalog> {
+  const res = await fetch("/catalog");
+  if (!res.ok) {
+    throw new Error(`getCatalog failed: ${res.status} ${await res.text()}`);
+  }
+  return (await res.json()) as Catalog;
+}
+
+/**
+ * POST /games/{id}/preview — hypothetical state if `actionId` were taken.
+ * The real game is NOT advanced and the AI is NOT run. `signal` lets the
+ * caller cancel a stale in-flight request.
+ */
+export async function previewAction(
+  gameId: string,
+  actionId: number,
+  signal?: AbortSignal,
+): Promise<StateMsg> {
+  const res = await fetch(`/games/${gameId}/preview`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ action_id: actionId }),
+    signal,
+  });
+  if (!res.ok) {
+    throw new Error(`previewAction failed: ${res.status} ${await res.text()}`);
   }
   return (await res.json()) as StateMsg;
 }

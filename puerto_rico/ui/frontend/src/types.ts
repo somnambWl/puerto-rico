@@ -48,6 +48,40 @@ export interface StateMsg {
   to_move_is_human: boolean;
   terminal: boolean;
   result: Result | null;
+  /** True for hypothetical frames from POST /games/{id}/preview. */
+  preview?: boolean;
+}
+
+// --------------------------------------------------------------------------- //
+// Catalog (/catalog) — static reference data (backend catalog.py)              //
+// --------------------------------------------------------------------------- //
+
+/** One building entry from /catalog. */
+export interface CatalogBuilding {
+  id: number;
+  name: string;
+  cost: number;
+  column: number;
+  vp: number;
+  capacity: number;
+  is_large: boolean;
+  is_production: boolean;
+  produces: string | null;
+  /** "production" | "large" | "small". */
+  kind: string;
+  description: string;
+}
+
+/** One good entry from /catalog (base sell value). */
+export interface CatalogGood {
+  good: number; // Good
+  name: string;
+  base_value: number;
+}
+
+export interface Catalog {
+  buildings: CatalogBuilding[];
+  goods: CatalogGood[];
 }
 
 /** Client -> server: chosen action id (ActionMsg). */
@@ -270,11 +304,14 @@ export function buildingName(id: number | null): string {
 // Highlight model (Board <- ActionPrompt hover)                                //
 // --------------------------------------------------------------------------- //
 
-/** A best-effort highlight signalled from a hovered action to the Board. */
+/**
+ * A best-effort highlight signalled from a hovered action to the Board.
+ * `ghost: true` marks a preview highlight (rendered as a dashed/ghost outline).
+ */
 export type Highlight =
-  | { kind: "plantation"; index: number }
-  | { kind: "building"; buildingId: number }
-  | { kind: "ship"; index: number }
-  | { kind: "role"; role: number }
-  | { kind: "good"; good: number }
+  | { kind: "plantation"; index: number; ghost?: boolean }
+  | { kind: "building"; buildingId: number; ghost?: boolean }
+  | { kind: "ship"; index: number; ghost?: boolean }
+  | { kind: "role"; role: number; ghost?: boolean }
+  | { kind: "good"; good: number; ghost?: boolean }
   | null;

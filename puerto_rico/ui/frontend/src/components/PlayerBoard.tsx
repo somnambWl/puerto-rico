@@ -8,16 +8,16 @@
  * The human board renders large; opponent boards render compact.
  */
 
+import { useBuildingInfo } from "../catalog";
 import type { PlayerView } from "../types";
 import {
-  BUILDINGS,
   GOOD_COLORS,
   GOOD_NAMES,
   LARGE_CONT,
   TILE_COLORS,
   TILE_NAMES,
-  buildingName,
 } from "../types";
+import { BuildingTooltipBody, InfoTooltip } from "./Tooltip";
 
 interface PlayerBoardProps {
   playerView: PlayerView;
@@ -45,6 +45,7 @@ export function PlayerBoard({
   name,
   active,
 }: PlayerBoardProps) {
+  const buildingInfo = useBuildingInfo();
   const cls =
     "player-board" +
     (isHuman ? " player-human" : " player-compact") +
@@ -116,27 +117,50 @@ export function PlayerBoard({
               return null;
             }
             const empty = slot.building === null;
-            const meta = empty ? undefined : BUILDINGS[slot.building as number];
-            const large = meta?.large ?? false;
-            return (
+            const meta = empty ? null : buildingInfo(slot.building as number);
+            const large = meta?.is_large ?? false;
+            const name = meta?.name ?? "";
+            const slotEl = (
               <div
-                key={i}
                 className={
                   "city-slot" +
                   (empty ? " slot-empty" : "") +
                   (large ? " city-large" : "")
                 }
-                title={empty ? "empty" : buildingName(slot.building)}
+                title={empty ? "empty" : name}
               >
                 {!empty && (
                   <>
-                    <span className="slot-text">
-                      {buildingName(slot.building)}
-                    </span>
+                    <span className="slot-text">{name}</span>
                     <ColonistDots count={slot.colonists} />
                   </>
                 )}
               </div>
+            );
+            if (empty || !meta) {
+              return (
+                <div key={i} className="city-slot-wrap">
+                  {slotEl}
+                </div>
+              );
+            }
+            return (
+              <InfoTooltip
+                key={i}
+                className="city-slot-wrap"
+                content={
+                  <BuildingTooltipBody
+                    name={meta.name}
+                    cost={meta.cost}
+                    vp={meta.vp}
+                    capacity={meta.capacity}
+                    description={meta.description}
+                    produces={meta.produces}
+                  />
+                }
+              >
+                {slotEl}
+              </InfoTooltip>
             );
           })}
         </div>

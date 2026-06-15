@@ -16,15 +16,21 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
-import { createGame, type Opponent } from "./api";
+import { createGame, getCatalog, previewAction, type Opponent } from "./api";
+import { CatalogProvider, useBuildingInfo } from "./catalog";
 import { Board } from "./components/Board";
 import { GameOver } from "./components/GameOver";
 import { Log, type LogEntry } from "./components/Log";
+import { PlaybackBar } from "./components/PlaybackBar";
 import { PlayerBoard } from "./components/PlayerBoard";
 import { ActionPrompt } from "./components/ActionPrompt";
+import { PreviewPanel } from "./components/PreviewPanel";
+import { computePreviewDiff, type PreviewDiff } from "./preview";
 import { useGameState } from "./hooks/useGameState";
-import type { Highlight, StateMsg } from "./types";
+import type { Catalog, Highlight, LegalAction, StateMsg } from "./types";
 import { PHASE_NAMES } from "./types";
+
+const PREVIEW_DEBOUNCE_MS = 120;
 
 interface GameSetup {
   gameId: string;
@@ -33,6 +39,23 @@ interface GameSetup {
 
 export default function App() {
   const [setup, setSetup] = useState<GameSetup | null>(null);
+
+  // Fetch the static catalog once on app start. Failure is non-fatal — the
+  // catalog context stays null and components fall back to the hardcoded maps.
+  const [catalog, setCatalog] = useState<Catalog | null>(null);
+  useEffect(() => {
+    let cancelled = false;
+    getCatalog()
+      .then((c) => {
+        if (!cancelled) setCatalog(c);
+      })
+      .catch(() => {
+        /* fall back to hardcoded BUILDINGS / GOOD_NAMES maps */
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   // Start-screen form state.
   const [opponent, setOpponent] = useState<Opponent>("heuristic");
@@ -60,6 +83,7 @@ export default function App() {
 
   if (!setup) {
     return (
+      <CatalogProvider catalog={catalog}>
       <div className="start-screen">
         <h1>Puerto Rico</h1>
         <div className="start-form">
@@ -104,15 +128,18 @@ export default function App() {
           {createError && <div className="error">{createError}</div>}
         </div>
       </div>
+      </CatalogProvider>
     );
   }
 
   return (
-    <GameView
-      gameId={setup.gameId}
-      humanSeat={setup.humanSeat}
-      onNewGame={() => setSetup(null)}
-    />
+    <CatalogProvider catalog={catalog}>
+      <GameView
+        gameId={setup.gameId}
+        humanSeat={setup.humanSeat}
+        onNewGame={() => setSetup(null)}
+      />
+    </CatalogProvider>
   );
 }
 
@@ -127,11 +154,40 @@ interface GameViewProps {
 }
 
 function GameView({ gameId, humanSeat, onNewGame }: GameViewProps) {
-  const { currentState, isAnimating, status, error, logFeed, sendAction } =
-    useGameState(gameId);
+  const {
+    currentState,
+    isAnimating,
+    isPaused,
+    pendingCount,
+    playbackIndex,
+    playbackTotal,
+    speed,
+    setSpeed,
+    status,
+    error,
+    logFeed,
+    sendAction,
+    pause,
+    resume,
+    step,
+    skipToEnd,
+  } = useGameState(gameId);
+
+  const buildingInfo = useBuildingInfo();
 
   const [highlight, setHighlight] = useState<Highlight>(null);
   const [logEntries, setLogEntries] = useState<LogEntry[]>([]);
+
+  // --- Action preview (hover a legal action -> diff the resulting state) --- //
+  const [previewLabel, setPreviewLabel] = useState<string | null>(null);
+  const [previewDiff, setPreviewDiff] = useState<PreviewDiff | null>(null);
+  const [previewLoading, setPreviewLoading] = useState(false);
+  const [previewHighlight, setPreviewHighlight] = useState<Highlight>(null);
+  const previewTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const previewAbort = useRef<AbortController | null>(null);
+  // Cache preview diffs per action id, scoped to the current decision state.
+  const previewCache = useRef<Map<number, PreviewDiff>>(new Map());
+  const previewStateKey = useRef<string>("");
 
   // Track the human's last chosen label so the resulting frame logs correctly.
   const pendingHumanLabel = useRef<string | null>(null);
@@ -188,6 +244,99 @@ function GameView({ gameId, humanSeat, onNewGame }: GameViewProps) {
     [currentState, sendAction],
   );
 
+  // A key identifying the current human-decision state, so the preview cache is
+  // invalidated whenever the decision context changes.
+  const decisionKey = useMemo(() => {
+    if (!currentState) return "";
+    const v = currentState.view;
+    return `${v.phase}:${currentState.to_move}:${currentState.legal_actions
+      .map((a) => a.id)
+      .join(",")}`;
+  }, [currentState]);
+
+  const clearPreview = useCallback(() => {
+    if (previewTimer.current !== null) {
+      clearTimeout(previewTimer.current);
+      previewTimer.current = null;
+    }
+    if (previewAbort.current !== null) {
+      previewAbort.current.abort();
+      previewAbort.current = null;
+    }
+    setPreviewLabel(null);
+    setPreviewDiff(null);
+    setPreviewLoading(false);
+    setPreviewHighlight(null);
+  }, []);
+
+  const onPreview = useCallback(
+    (action: LegalAction | null) => {
+      // Reset the cache if the decision context changed.
+      if (previewStateKey.current !== decisionKey) {
+        previewStateKey.current = decisionKey;
+        previewCache.current.clear();
+      }
+      if (action === null) {
+        clearPreview();
+        return;
+      }
+      if (!currentState) return;
+
+      setPreviewLabel(action.label);
+
+      // Serve from cache immediately if present.
+      const cached = previewCache.current.get(action.id);
+      if (cached) {
+        if (previewTimer.current !== null) {
+          clearTimeout(previewTimer.current);
+          previewTimer.current = null;
+        }
+        setPreviewDiff(cached);
+        setPreviewLoading(false);
+        setPreviewHighlight(cached.highlight);
+        return;
+      }
+
+      setPreviewDiff(null);
+      setPreviewLoading(true);
+      setPreviewHighlight(null);
+
+      // Debounce the network request; cancel any in-flight one.
+      if (previewTimer.current !== null) clearTimeout(previewTimer.current);
+      previewTimer.current = setTimeout(() => {
+        if (previewAbort.current !== null) previewAbort.current.abort();
+        const ctrl = new AbortController();
+        previewAbort.current = ctrl;
+        const keyAtRequest = decisionKey;
+        previewAction(gameId, action.id, ctrl.signal)
+          .then((after) => {
+            // Ignore stale responses (decision changed or hover moved on).
+            if (keyAtRequest !== previewStateKey.current) return;
+            const diff = computePreviewDiff(
+              currentState,
+              after,
+              humanSeat,
+              buildingInfo,
+            );
+            previewCache.current.set(action.id, diff);
+            setPreviewDiff(diff);
+            setPreviewLoading(false);
+            setPreviewHighlight(diff.highlight);
+          })
+          .catch(() => {
+            /* aborted or failed — leave the panel showing the label only */
+            setPreviewLoading(false);
+          });
+      }, PREVIEW_DEBOUNCE_MS);
+    },
+    [clearPreview, currentState, decisionKey, gameId, humanSeat, buildingInfo],
+  );
+
+  // Disable / clear preview while AI playback is animating.
+  useEffect(() => {
+    if (isAnimating) clearPreview();
+  }, [isAnimating, clearPreview]);
+
   if (!currentState) {
     return (
       <div className="loading">
@@ -209,6 +358,17 @@ function GameView({ gameId, humanSeat, onNewGame }: GameViewProps) {
     .map((_, seat) => seat)
     .filter((seat) => seat !== humanSeat);
 
+  // The preview ghost-highlight wins over the hover highlight when present.
+  const activeHighlight = previewHighlight ?? highlight;
+
+  // Latest move label for the playback bar (most recent log entry).
+  const latestMoveLabel =
+    logEntries.length > 0
+      ? `${playerNames[logEntries[logEntries.length - 1].seat] ?? ""}: ${
+          logEntries[logEntries.length - 1].label
+        }`
+      : null;
+
   return (
     <div className="game">
       <header className="game-header">
@@ -223,12 +383,28 @@ function GameView({ gameId, humanSeat, onNewGame }: GameViewProps) {
         <main className="game-main">
           <Board
             view={view}
-            highlight={highlight}
+            highlight={activeHighlight}
             onPlantationClick={() => {
               /* visual highlight toggle handled via hover; click is a no-op
                  placeholder so the row reads as interactive */
             }}
           />
+
+          {isAnimating && (
+            <PlaybackBar
+              index={playbackIndex}
+              total={playbackTotal}
+              pendingCount={pendingCount}
+              isPaused={isPaused}
+              speed={speed}
+              latestLabel={latestMoveLabel}
+              onPause={pause}
+              onResume={resume}
+              onStep={step}
+              onSkip={skipToEnd}
+              onSpeed={setSpeed}
+            />
+          )}
 
           <PlayerBoard
             playerView={view.players[humanSeat]}
@@ -244,6 +420,13 @@ function GameView({ gameId, humanSeat, onNewGame }: GameViewProps) {
             disabled={promptDisabled}
             aiThinking={aiThinking}
             onHighlight={setHighlight}
+            onPreview={onPreview}
+          />
+
+          <PreviewPanel
+            label={previewLabel}
+            diff={previewDiff}
+            loading={previewLoading}
           />
         </main>
 
