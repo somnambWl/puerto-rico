@@ -92,6 +92,7 @@ def _config_to_dict(c: GameConfig) -> dict:
         "num_players": c.num_players,
         "seed": c.seed,
         "ruleset": c.ruleset,
+        "max_rounds": c.max_rounds,
     }
 
 
@@ -136,6 +137,7 @@ def to_dict(state: GameState) -> dict:
         },
         "phase_state": _phase_state_to_dict(state.phase_state),
         "end_triggered": state.end_triggered,
+        "round_number": state.round_number,
     }
 
 
@@ -203,6 +205,7 @@ def _config_from_dict(d: dict) -> GameConfig:
         num_players=d["num_players"],
         seed=d["seed"],
         ruleset=d["ruleset"],
+        max_rounds=d.get("max_rounds", GameConfig.max_rounds),
     )
 
 
@@ -249,6 +252,7 @@ def from_dict(d: dict) -> GameState:
         },
         phase_state=_phase_state_from_dict(d["phase_state"]),
         end_triggered=d["end_triggered"],
+        round_number=d.get("round_number", 0),
     )
 
 

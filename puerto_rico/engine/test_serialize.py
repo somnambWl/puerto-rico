@@ -60,7 +60,7 @@ def _hand_built_state() -> GameState:
     )
 
     return GameState(
-        config=GameConfig(num_players=4, seed=1234, ruleset="base"),
+        config=GameConfig(num_players=4, seed=1234, ruleset="base", max_rounds=17),
         rng=rng,
         players=players,
         governor=0,
@@ -100,8 +100,13 @@ def _hand_built_state() -> GameState:
 
 def _make_state() -> GameState:
     if new_game is not None:
-        return new_game(GameConfig(num_players=4, seed=1234))
-    return _hand_built_state()
+        s = new_game(GameConfig(num_players=4, seed=1234, max_rounds=17))
+    else:
+        s = _hand_built_state()
+    # Force non-default values so the round-trip test would FAIL if these fields
+    # were dropped during (de)serialization.
+    s.round_number = 5
+    return s
 
 
 def _assert_player_equal(a: PlayerState, b: PlayerState) -> None:
@@ -124,6 +129,7 @@ def test_round_trip_lossless():
 
     # config
     assert r.config == s.config
+    assert r.config.max_rounds == s.config.max_rounds
 
     # scalars
     assert r.governor == s.governor
@@ -134,6 +140,7 @@ def test_round_trip_lossless():
     assert r.quarry_supply == s.quarry_supply
     assert r.vp_chips_remaining == s.vp_chips_remaining
     assert r.end_triggered == s.end_triggered
+    assert r.round_number == s.round_number
 
     # players
     assert len(r.players) == len(s.players)
