@@ -14,10 +14,54 @@ session never reimplements a rule.
 from __future__ import annotations
 
 from puerto_rico.engine import scoring
+from puerto_rico.engine.enums import DecisionType
+from puerto_rico.engine.phases import (
+    CAPTAIN_WHARF,
+    ISLAND_TARGET_OFFSET,
+    MAYOR_STORE,
+)
 from puerto_rico.env import action_codec
 
 from . import labels
-from .schemas import LegalActionMsg, StateMsg
+from .schemas import ColonistTarget, LegalActionMsg, StateMsg
+
+
+def _structured_fields(action) -> dict:
+    """Decode an engine ``Action`` into the structured ``LegalActionMsg`` fields.
+
+    Returns only the keys relevant to the action's :class:`DecisionType`; the
+    rest stay at their schema defaults. This lets the frontend map a board
+    element straight to the action id (click-to-act / drag-and-drop) without
+    parsing the human-readable label.
+    """
+    t = action.type
+    if t == DecisionType.SELECT_ROLE:
+        return {"role": int(action.role)}
+    if t == DecisionType.TAKE_TILE:
+        return {"tile": int(action.tile)}
+    if t == DecisionType.BUILD:
+        return {"building": int(action.building)}
+    if t == DecisionType.SELL:
+        return {"good": int(action.good)}
+    if t == DecisionType.CHOOSE:
+        return {"good": int(action.good)} if action.good is not None else {}
+    if t == DecisionType.LOAD:
+        out: dict = {"good": int(action.good)}
+        if action.choice == CAPTAIN_WHARF:
+            out["wharf"] = True
+        elif action.target is not None:
+            out["ship"] = int(action.target)
+        return out
+    if t == DecisionType.PLACE_COLONIST:
+        target = action.target
+        if target == MAYOR_STORE:
+            ct = ColonistTarget(kind="store")
+        elif target >= ISLAND_TARGET_OFFSET:
+            ct = ColonistTarget(kind="island", index=target - ISLAND_TARGET_OFFSET)
+        else:
+            ct = ColonistTarget(kind="city", index=int(target))
+        return {"colonist_target": ct}
+    return {}
 
 
 def _jsonable(obj):
@@ -87,6 +131,7 @@ class GameSession:
                     id=action_codec.to_int(action),
                     label=labels.label_action(action, game),
                     kind=labels.label_action_kind(action),
+                    **_structured_fields(action),
                 )
             )
         return out
@@ -127,8 +172,18 @@ class GameSession:
             "players": players,
         }
 
-    def state_view(self) -> StateMsg:
-        """A :class:`StateMsg` snapshot from the human's perspective."""
+    def state_view(
+        self,
+        last_action_label: str | None = None,
+        last_action_seat: int | None = None,
+    ) -> StateMsg:
+        """A :class:`StateMsg` snapshot from the human's perspective.
+
+        ``last_action_label`` / ``last_action_seat`` describe the action that
+        produced this frame (the label is computed by the caller *before*
+        applying, so the game state matched the actor's turn). They default to
+        ``None`` for the initial connect/reset frame, which has no predecessor.
+        """
         game = self.game
         return StateMsg(
             view=_jsonable(game.public_view(perspective=self.human_seat)),
@@ -137,6 +192,8 @@ class GameSession:
             to_move_is_human=(game.current_player == self.human_seat),
             terminal=game.is_terminal,
             result=self._result_for(game),
+            last_action_label=last_action_label,
+            last_action_seat=last_action_seat,
         )
 
     def preview_action(self, action_id: int) -> StateMsg:
@@ -180,10 +237,18 @@ class GameSession:
     # ------------------------------------------------------------------ #
 
     def ai_step_once(self) -> StateMsg:
-        """Apply one AI action for the current (non-human) seat; return the state."""
-        action = self.ai.act(self.game)
-        self.game.apply(action)
-        return self.state_view()
+        """Apply one AI action for the current (non-human) seat; return the state.
+
+        The action's label and the acting seat are captured *before* the apply
+        (so ``game`` still reflects the actor's turn) and attached to the
+        resulting frame, so the client log shows what the AI actually did.
+        """
+        game = self.game
+        action = self.ai.act(game)
+        seat = game.current_player
+        label = labels.label_action(action, game)
+        game.apply(action)
+        return self.state_view(last_action_label=label, last_action_seat=seat)
 
     def run_ai_until_human(self) -> list[StateMsg]:
         """Auto-run the AI for every non-human seat until the human's turn / end.
@@ -213,8 +278,14 @@ class GameSession:
             raise ValueError(f"action {action_id} is not currently legal")
 
         action = action_codec.from_int(action_id, game.state)
+        # Label + seat captured before the apply, while the game still reflects
+        # the human's turn, so the produced frame records what the human did.
+        seat = game.current_player
+        label = labels.label_action(action, game)
         game.apply(action)
 
-        states: list[StateMsg] = [self.state_view()]
+        states: list[StateMsg] = [
+            self.state_view(last_action_label=label, last_action_seat=seat)
+        ]
         states.extend(self.run_ai_until_human())
         return states

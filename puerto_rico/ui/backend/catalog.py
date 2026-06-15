@@ -14,7 +14,9 @@ reimplements a rule; it is display metadata only.
 from __future__ import annotations
 
 from puerto_rico.engine.buildings import CATALOG
-from puerto_rico.engine.enums import BuildingId, Good
+from puerto_rico.engine.enums import BuildingId, Good, Role
+from puerto_rico.engine.game import new_game
+from puerto_rico.engine.state import GameConfig
 
 from ._display import GOOD_BASE_VALUE, GOOD_NAMES
 
@@ -68,6 +70,19 @@ def _kind(spec) -> str:
     return "small"
 
 
+# --------------------------------------------------------------------------- #
+# initial supply counts (read from the engine's actual 4-player setup)         #
+# --------------------------------------------------------------------------- #
+#
+# Computed once from a fresh game so it always matches whatever the engine
+# produces (including the corrected small-violet=2 / large=1 counts). We read
+# the standard 4-player game and map each BuildingId -> its initial count.
+
+_INITIAL_SUPPLY: dict[BuildingId, int] = dict(
+    new_game(GameConfig(num_players=4)).buildings_supply
+)
+
+
 def _building_entry(spec) -> dict:
     return {
         "id": int(spec.id),
@@ -81,6 +96,7 @@ def _building_entry(spec) -> dict:
         "produces": (GOOD_NAMES[spec.produces] if spec.produces is not None else None),
         "kind": _kind(spec),
         "description": _description(spec),
+        "supply": int(_INITIAL_SUPPLY[spec.id]),
     }
 
 
@@ -92,11 +108,64 @@ def _good_entry(good: Good) -> dict:
     }
 
 
+# --------------------------------------------------------------------------- #
+# role reference (privilege + shared action, from puerto-rico-rules.md)        #
+# --------------------------------------------------------------------------- #
+#
+# Concise one-liners for role tooltips. The frontend appends dynamic
+# quantitative bits (e.g. the current colonist-ship count) itself.
+
+_ROLE_NAMES: dict[Role, str] = {
+    Role.SETTLER: "Settler",
+    Role.MAYOR: "Mayor",
+    Role.BUILDER: "Builder",
+    Role.CRAFTSMAN: "Craftsman",
+    Role.TRADER: "Trader",
+    Role.CAPTAIN: "Captain",
+    Role.PROSPECTOR: "Prospector",
+}
+
+_ROLE_DESCRIPTIONS: dict[Role, str] = {
+    Role.SETTLER: (
+        "Take a plantation tile (chooser may take a quarry). "
+        "Privilege: may take a quarry."
+    ),
+    Role.MAYOR: (
+        "Take colonists: 1 from the supply (privilege), then everyone draws "
+        "from the colonist ship; place them on buildings/plantations."
+    ),
+    Role.BUILDER: "Build one building. Privilege: pay 1 doubloon less.",
+    Role.CRAFTSMAN: (
+        "All players produce goods. Privilege: take 1 extra good of a kind "
+        "you produced."
+    ),
+    Role.TRADER: (
+        "Sell one good to the trading house. Privilege: +1 doubloon on your sale."
+    ),
+    Role.CAPTAIN: (
+        "Ship goods for victory points (mandatory if able). "
+        "Privilege: +1 VP on your first shipment."
+    ),
+    Role.PROSPECTOR: "Take 1 doubloon from the bank. No shared action.",
+}
+
+
+def _role_entry(role: Role) -> dict:
+    return {
+        "role": int(role),
+        "name": _ROLE_NAMES[role],
+        "description": _ROLE_DESCRIPTIONS[role],
+    }
+
+
 #: Building list ordered by BuildingId (production, small beige, large beige).
 BUILDINGS: list[dict] = [_building_entry(CATALOG[bid]) for bid in CATALOG]
 
 #: Good base sell values in Good order (corn 0 .. coffee 4).
 GOODS: list[dict] = [_good_entry(g) for g in Good]
 
+#: Role privilege/action reference in Role order (settler .. prospector).
+ROLES: list[dict] = [_role_entry(r) for r in Role]
+
 #: Combined static reference payload for ``GET /catalog``.
-CATALOG_RESPONSE: dict = {"buildings": BUILDINGS, "goods": GOODS}
+CATALOG_RESPONSE: dict = {"buildings": BUILDINGS, "goods": GOODS, "roles": ROLES}

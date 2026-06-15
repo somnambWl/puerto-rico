@@ -13,6 +13,19 @@ from typing import Literal, Optional
 from pydantic import BaseModel, Field
 
 
+class ColonistTarget(BaseModel):
+    """Where a PLACE_COLONIST action drops the colonist.
+
+    ``kind`` is one of ``"city"`` (a city building slot), ``"island"`` (an
+    island plantation/quarry slot), or ``"store"`` (keep remaining colonists in
+    San Juan / storage — ends placement). ``index`` is the engine's raw slot
+    index within the city or island; it is omitted for ``"store"``.
+    """
+
+    kind: Literal["city", "island", "store"]
+    index: Optional[int] = None
+
+
 class LegalActionMsg(BaseModel):
     """One legal action offered to the human, ready to render as a button.
 
@@ -20,11 +33,31 @@ class LegalActionMsg(BaseModel):
     an :class:`ActionMsg`); ``label`` is the display string; ``kind`` is a coarse
     category for grouping (``"role"``/``"tile"``/``"build"``/``"colonist"``/
     ``"sell"``/``"ship"``/``"choose"``/``"pass"``).
+
+    The remaining fields are *structured* targets decoded from the engine action
+    so the frontend can map a board element directly to the action id (click to
+    act / drag-and-drop). All default ``None`` and only the field(s) relevant to
+    the action's kind are populated:
+
+    * ``role`` — SELECT_ROLE: the ``Role`` enum value.
+    * ``tile`` — TAKE_TILE: the ``TileType`` enum value (quarry or plantation).
+    * ``building`` — BUILD: the ``BuildingId`` enum value.
+    * ``good`` — SELL / LOAD / CHOOSE: the ``Good`` enum value.
+    * ``ship`` — LOAD onto a cargo ship: the target ship index.
+    * ``wharf`` — LOAD via the wharf (ship all of one good to the supply).
+    * ``colonist_target`` — PLACE_COLONIST: the decoded :class:`ColonistTarget`.
     """
 
     id: int
     label: str
     kind: str
+    role: Optional[int] = None
+    tile: Optional[int] = None
+    building: Optional[int] = None
+    good: Optional[int] = None
+    ship: Optional[int] = None
+    wharf: bool = False
+    colonist_target: Optional[ColonistTarget] = None
 
 
 class StateMsg(BaseModel):
@@ -40,6 +73,13 @@ class StateMsg(BaseModel):
     clone (the real game is untouched) so the client can diff the current state
     against the result before committing. ``preview`` is ``False`` on every
     normal state frame; preview frames carry an empty ``legal_actions`` list.
+
+    ``last_action_label`` / ``last_action_seat`` describe the action that
+    *produced* this frame: during a human step the session attaches the
+    human-readable label and the seat that moved to each streamed state, so the
+    client log can show exactly what the human and each AI seat did. They are
+    ``None`` on the initial connect/reset frame (no preceding action) and on
+    preview frames.
     """
 
     view: dict
@@ -49,6 +89,8 @@ class StateMsg(BaseModel):
     terminal: bool
     result: Optional[dict] = None
     preview: bool = False
+    last_action_label: Optional[str] = None
+    last_action_seat: Optional[int] = None
 
 
 class ActionMsg(BaseModel):

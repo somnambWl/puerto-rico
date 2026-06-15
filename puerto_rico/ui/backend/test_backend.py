@@ -102,12 +102,18 @@ def test_post_games_returns_initial_state(client: TestClient) -> None:
     legal = state["legal_actions"]
     assert len(legal) > 0
     for a in legal:
-        assert set(a) == {"id", "label", "kind"}
+        # Core fields plus the additive structured-target fields.
+        assert {"id", "label", "kind"} <= set(a)
         assert isinstance(a["id"], int)
         assert isinstance(a["label"], str) and a["label"]
-    # Opening decision is role selection.
+    # Opening decision is role selection: each carries a structured `role`.
     assert all(a["kind"] == "role" for a in legal)
     assert any("Take role" in a["label"] for a in legal)
+    for a in legal:
+        assert isinstance(a["role"], int)
+        # role-selection actions never carry the other targets.
+        assert a["tile"] is None and a["building"] is None
+        assert a["colonist_target"] is None
 
 
 def test_get_game_reconnect_and_404(client: TestClient) -> None:
@@ -148,6 +154,41 @@ def test_ws_initial_state_and_one_step(client: TestClient) -> None:
         for _ in seq["states"]:
             frame = ws.receive_json()
             assert frame["type"] == "state"
+
+
+def test_ws_step_streams_applied_action_label_and_seat(client: TestClient) -> None:
+    # Each streamed state carries the label + seat of the action that produced
+    # it: the first frame is the human's move; following frames are AI seats.
+    data = _new_game(client)
+    gid = data["game_id"]
+    human_seat = 0
+
+    with client.websocket_connect(f"/ws/games/{gid}") as ws:
+        first = ws.receive_json()
+        # The initial connect frame has no preceding action.
+        assert first["last_action_label"] is None
+        assert first["last_action_seat"] is None
+
+        legal = first["legal_actions"]
+        chosen = next(a for a in legal)  # any legal human action
+        ws.send_json({"action_id": chosen["id"]})
+
+        seq = ws.receive_json()
+        assert seq["type"] == "sequence"
+
+        frames = [ws.receive_json() for _ in seq["states"]]
+        for f in frames:
+            assert f["type"] == "state"
+
+        # First produced frame is the human's action.
+        assert frames[0]["last_action_seat"] == human_seat
+        assert frames[0]["last_action_label"] == chosen["label"]
+
+        # Any subsequent frames are AI seats with non-empty labels.
+        for f in frames[1:]:
+            assert f["last_action_seat"] != human_seat
+            assert f["last_action_seat"] in range(4)
+            assert isinstance(f["last_action_label"], str) and f["last_action_label"]
 
 
 def test_ws_illegal_action_then_recovers(client: TestClient) -> None:
@@ -349,6 +390,8 @@ def test_catalog_lists_all_buildings_and_goods(client: TestClient) -> None:
         assert b["kind"] in {"production", "small", "large"}
         assert isinstance(b["cost"], int)
         assert isinstance(b["vp"], int)
+        # Every building has an initial supply count read from the engine setup.
+        assert isinstance(b["supply"], int) and b["supply"] >= 1
 
     # Spot-check a few specs against the engine catalog.
     coffee = by_id[BuildingId.COFFEE_ROASTER]
@@ -366,6 +409,83 @@ def test_catalog_lists_all_buildings_and_goods(client: TestClient) -> None:
     assert len(goods) == 5
     base = {g["name"]: g["base_value"] for g in goods}
     assert base == {"Corn": 0, "Indigo": 1, "Sugar": 2, "Tobacco": 3, "Coffee": 4}
+
+    roles = data["roles"]
+    assert len(roles) == 7
+    for r in roles:
+        assert set(r) == {"role", "name", "description"}
+        assert isinstance(r["role"], int)
+        assert r["name"] and isinstance(r["name"], str)
+        assert r["description"] and isinstance(r["description"], str)
+    by_role = {r["name"]: r for r in roles}
+    assert "quarry" in by_role["Settler"]["description"].lower()
+    assert "build" in by_role["Builder"]["description"].lower()
+    assert "doubloon" in by_role["Prospector"]["description"].lower()
+
+
+def test_legal_actions_carry_structured_targets() -> None:
+    # Drive a server-side session and, whenever the human faces a SETTLER /
+    # BUILDER / MAYOR decision, assert the matching structured target field is
+    # populated on the wire message.
+    from puerto_rico.engine.state import GameConfig
+    from puerto_rico.engine.game import Game
+    from puerto_rico.agents.heuristic_agent import HeuristicAgent
+    from puerto_rico.ui.backend.session import GameSession
+    from puerto_rico.env import action_codec
+
+    session = GameSession(
+        Game(GameConfig(num_players=4, seed=7)), human_seat=0, ai=HeuristicAgent()
+    )
+    session.run_ai_until_human()
+
+    saw_tile = saw_build = saw_colonist = False
+    for _ in range(800):
+        if session.game.is_terminal:
+            break
+        if session.game.current_player != 0:
+            session.run_ai_until_human()
+            continue
+        msgs = session._legal_action_msgs()
+        for m in msgs:
+            if m.kind == "tile":
+                saw_tile = True
+                assert m.tile is not None and m.tile >= 1
+            elif m.kind == "build":
+                saw_build = True
+                assert m.building is not None and 0 <= m.building <= 22
+            elif m.kind == "colonist":
+                saw_colonist = True
+                assert m.colonist_target is not None
+                ct = m.colonist_target
+                assert ct.kind in {"city", "island", "store"}
+                if ct.kind in {"city", "island"}:
+                    assert ct.index is not None and ct.index >= 0
+                else:
+                    assert ct.index is None
+        # Advance by taking the first legal human action.
+        first = session.game.legal_actions()[0]
+        session.human_step(action_codec.to_int(first))
+
+    assert saw_tile, "never reached a SETTLER (tile) decision"
+    assert saw_build, "never reached a BUILDER (build) decision"
+    assert saw_colonist, "never reached a MAYOR (colonist) decision"
+
+
+def test_load_action_carries_ship_or_wharf() -> None:
+    # Synthetic check on the structured-field decoder for LOAD: a cargo load
+    # carries `ship`; a wharf load carries `wharf=True`.
+    from puerto_rico.ui.backend.session import _structured_fields
+    from puerto_rico.engine.phases import CAPTAIN_WHARF
+
+    cargo = Action.load(Good.TOBACCO, target=2)
+    f_cargo = _structured_fields(cargo)
+    assert f_cargo["good"] == int(Good.TOBACCO) and f_cargo["ship"] == 2
+    assert "wharf" not in f_cargo
+
+    wharf = Action(DecisionType.LOAD, good=Good.SUGAR, choice=CAPTAIN_WHARF)
+    f_wharf = _structured_fields(wharf)
+    assert f_wharf["good"] == int(Good.SUGAR) and f_wharf["wharf"] is True
+    assert "ship" not in f_wharf
 
 
 def test_state_msg_preview_defaults_false(client: TestClient) -> None:
