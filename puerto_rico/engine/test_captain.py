@@ -18,10 +18,10 @@ from puerto_rico.engine.enums import BuildingId, DecisionType, Good, Phase, Role
 from puerto_rico.engine.game import Game
 from puerto_rico.engine.phases import (
     CAPTAIN_WHARF,
+    _enter_storage,
     _legal_ships_for_good,
     _store_goods_for_player,
     award_captain_vp,
-    captain_last_duty,
 )
 from puerto_rico.engine.state import GameConfig
 
@@ -392,8 +392,11 @@ def test_last_duty_full_ships_unload_partial_carries_over():
     g.state.cargo_ships[1].count = 3
     supply_corn = g.state.goods_supply[Good.CORN]
 
+    # Drive the REAL interactive end-of-phase path. With all goods cleared no
+    # player has a windrose choice, so storage auto-resolves and the storage
+    # sub-phase finishes by unloading full ships (and ending the role).
     g.state.phase_state.order = [0, 1, 2, 3]
-    captain_last_duty(g.state)
+    _enter_storage(g.state)
 
     assert g.state.cargo_ships[0].good is None
     assert g.state.cargo_ships[0].count == 0

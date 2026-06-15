@@ -149,11 +149,11 @@ class GameConfig:
     num_players: int = 4
     seed: int | None = None
     ruleset: str = "base"
-    # SAFETY VALVE until phases-09 end triggers exist: force GAME_OVER after this
-    # many completed rounds so random playthroughs always terminate. The real
-    # end conditions are colonist-shortage / 12th-building / VP-exhaustion
-    # (design/02 §Game End); once those land this cap should never fire in a real
-    # game. See phases.py:end_of_round.
+    # BACKSTOP cap: force GAME_OVER after this many completed rounds so a
+    # pathological rollout always terminates. The three REAL end conditions —
+    # colonist-shortage / 12th-building / VP-exhaustion (design/02 §Game End) —
+    # are all wired and set ``end_triggered``, so this cap should essentially
+    # never fire in real play. See phases.py:end_of_round.
     max_rounds: int = 50
 
 

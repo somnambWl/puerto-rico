@@ -12,11 +12,12 @@ This module is the architectural core of the **engine-phases** epic. It owns:
   ``game.py`` delegates to. These read ``state.phase`` and route to the active
   role's handlers via the ``ROLE_PHASES`` registry.
 
-ROLE_PHASES seam
-----------------
-``ROLE_PHASES`` maps a ``Phase`` (one of the role phases) to a
-:class:`RolePhase` of three callables that the per-role tasks (phases-02..08)
-populate:
+ROLE_PHASES registry
+--------------------
+All six role phases (settler, mayor, builder, craftsman, trader, captain) are
+fully implemented here. ``ROLE_PHASES`` maps each role ``Phase`` to a
+:class:`RolePhase` of three callables, providing the structural organization the
+dispatcher routes through:
 
 - ``legal_actions(state) -> list[Action]`` — atomic choices for the current
   player's turn in this phase.
@@ -24,11 +25,13 @@ populate:
   :func:`end_of_role` when the phase finishes.
 - ``last_duty(state) -> None`` — the role's clean-up step run by
   :func:`end_of_role` *before* returning to selection (settler refills the row,
-  mayor refills the ship, trader/captain clear, ...).
+  mayor refills the ship, trader clears a full house, ...). ``None`` for roles
+  with no clean-up (builder, craftsman, captain — the captain finishes via its
+  interactive storage sub-phase instead).
 
-Until a role task lands, that phase uses :func:`_stub_phase`, which does nothing
-and immediately returns to role selection. This keeps a full playthrough running
-end-to-end while the individual role phases are filled in one task at a time.
+PROSPECTOR has no follow phase: it resolves inline during role selection. A
+generic stub :class:`RolePhase` (:func:`_stub_phase`) still exists as a safe
+default but no role uses it now — every phase is registered with its real logic.
 """
 
 from __future__ import annotations
@@ -165,6 +168,26 @@ def end_of_role(state: GameState) -> None:
         return_to_role_selection(state)
     else:
         end_of_round(state)
+
+
+def _advance_order(state: GameState, *, on_next: Callable[[GameState], None] | None = None) -> None:
+    """Advance ``order_pos`` one step; end the role when ``order`` is exhausted.
+
+    The shared single-pass cursor for the settler/mayor/builder/trader phases
+    (each player acts once, in ``order``). When stepping to the next player it
+    seats the cursor and, if given, runs ``on_next(state)`` (the mayor uses this
+    to begin the next player's placement turn). When every player has acted, runs
+    :func:`end_of_role`. The captain's looping cursor is separate (it revisits
+    players), so it does not use this helper.
+    """
+    ps = state.phase_state
+    ps.order_pos += 1
+    if ps.order_pos >= len(ps.order):
+        end_of_role(state)
+    else:
+        state.current_player = ps.order[ps.order_pos]
+        if on_next is not None:
+            on_next(state)
 
 
 def _round_budget_remaining(state: GameState) -> bool:
@@ -337,9 +360,10 @@ def register_role_phase(phase: Phase, role_phase: RolePhase) -> None:
 #       - "post_place" fires AFTER a tile has been auto-placed. The HOSPICE
 #         handler uses this to drop a free colonist from ``colonist_supply``
 #         onto the just-placed slot, occupying it immediately.
-#   ctx.extra["is_chooser"] : bool — whether player_idx is the settler chooser
-#         (privilege holder). HACIENDA's pre-take only applies to the chooser per
-#         design/02; the phase still fires for everyone and lets the handler gate.
+#   ctx.extra["is_chooser"] : bool — whether player_idx is the settler chooser.
+#         INFORMATIONAL/UNUSED: no handler consumes it. HACIENDA fires for every
+#         settler-phase player (chooser and non-chooser alike) and does not gate
+#         on the chooser, so this flag is purely descriptive context.
 #   ctx.extra["slot"]    : int | None — for "post_place", the island slot index
 #         the tile was just placed into (the slot HOSPICE should man). None for
 #         "pre_take".
@@ -440,7 +464,7 @@ def settler_apply(state: GameState, action: Action) -> None:
 
         # Hacienda hook (pre-take): chooser may take an extra face-down tile
         # first. No-op until the buildings-05 handler registers.
-        pre_ctx = Ctx(tile=None)
+        pre_ctx = Ctx()
         pre_ctx.extra = {
             "event": "pre_take",
             "is_chooser": is_chooser,
@@ -467,12 +491,7 @@ def settler_apply(state: GameState, action: Action) -> None:
 
 def _advance_settler(state: GameState) -> None:
     """Advance ``order_pos``; end the role when every player has acted."""
-    ps = state.phase_state
-    ps.order_pos += 1
-    if ps.order_pos >= len(ps.order):
-        end_of_role(state)
-    else:
-        state.current_player = ps.order[ps.order_pos]
+    _advance_order(state)
 
 
 def settler_last_duty(state: GameState) -> None:
@@ -535,12 +554,9 @@ register_role_phase(
 MAYOR_STORE = -1
 #: Offset added to an island slot index to distinguish it from a city slot index
 #: in a PLACE_COLONIST target. City slots are 0..11, island slots are 100..111.
-_ISLAND_TARGET_OFFSET = 100
-
-
-def _building_capacity(bid: BuildingId) -> int:
-    """Colonist-circle capacity of a built building (from the catalog)."""
-    return buildings.CATALOG[bid].capacity
+ISLAND_TARGET_OFFSET = 100
+#: Backwards-compatible alias for the historical private name.
+_ISLAND_TARGET_OFFSET = ISLAND_TARGET_OFFSET
 
 
 def mayor_phase_enter(state: GameState) -> None:
@@ -578,11 +594,11 @@ def _empty_circle_targets(player) -> list[int]:
     for idx, slot in enumerate(player.city):
         if slot.building is None or slot.building == BuildingId.LARGE_CONT:
             continue
-        if slot.colonists < _building_capacity(slot.building):
+        if slot.colonists < buildings.CATALOG[slot.building].capacity:
             targets.append(idx)
     for idx, slot in enumerate(player.island):
         if slot.tile != TileType.EMPTY and not slot.colonist:
-            targets.append(_ISLAND_TARGET_OFFSET + idx)
+            targets.append(ISLAND_TARGET_OFFSET + idx)
     return targets
 
 
@@ -644,8 +660,8 @@ def mayor_apply(state: GameState, action: Action) -> None:
         _mayor_advance(state)
         return
 
-    if target >= _ISLAND_TARGET_OFFSET:
-        player.island[target - _ISLAND_TARGET_OFFSET].colonist = True
+    if target >= ISLAND_TARGET_OFFSET:
+        player.island[target - ISLAND_TARGET_OFFSET].colonist = True
     else:
         player.city[target].colonists += 1
     player.stored_colonists -= 1
@@ -658,13 +674,7 @@ def mayor_apply(state: GameState, action: Action) -> None:
 
 def _mayor_advance(state: GameState) -> None:
     """Advance ``order_pos`` to the next player (begin their turn), or end role."""
-    ps = state.phase_state
-    ps.order_pos += 1
-    if ps.order_pos >= len(ps.order):
-        end_of_role(state)
-    else:
-        state.current_player = ps.order[ps.order_pos]
-        _mayor_begin_turn(state)
+    _advance_order(state, on_next=_mayor_begin_turn)
 
 
 def mayor_last_duty(state: GameState) -> None:
@@ -751,19 +761,27 @@ def _occupied_quarries(player) -> int:
     )
 
 
-def _build_cost(state: GameState, player_idx: int, bid: BuildingId) -> int:
-    """Doubloon cost for ``player_idx`` to build ``bid`` this builder turn.
+def build_cost(state: GameState, player_idx: int, building_id: BuildingId) -> int:
+    """Doubloon cost for ``player_idx`` to build ``building_id`` this builder turn.
 
     printed cost − chooser privilege (−1) − quarry discount, floored at 0. The
     quarry discount is ``min(occupied quarries, column)``: the building's board
     column (1..4) caps how many quarries may reduce its cost.
+
+    Public engine API: the single source of truth for build cost. The builder
+    phase uses it directly; the UI backend / agents should call this rather than
+    re-deriving the discount logic.
     """
-    spec = buildings.CATALOG[bid]
+    spec = buildings.CATALOG[building_id]
     cost = spec.cost
     if player_idx == state.phase_state.role_chooser:
         cost -= 1
     cost -= min(_occupied_quarries(state.players[player_idx]), spec.column)
     return max(0, cost)
+
+
+#: Backwards-compatible alias for the historical private name (tests import this).
+_build_cost = build_cost
 
 
 def _empty_city_slot(player) -> int | None:
@@ -813,7 +831,7 @@ def builder_legal_actions(state: GameState) -> list[Action]:
             continue
         if player.owns(bid):
             continue
-        if player.doubloons < _build_cost(state, player_idx, bid):
+        if player.doubloons < build_cost(state, player_idx, bid):
             continue
         if not _has_room(player, bid):
             continue
@@ -839,7 +857,7 @@ def builder_apply(state: GameState, action: Action) -> None:
         spec = buildings.CATALOG[bid]
 
         # Pay the cost to the bank (doubloons leave the game, not to a player).
-        player.doubloons -= _build_cost(state, player_idx, bid)
+        player.doubloons -= build_cost(state, player_idx, bid)
         state.buildings_supply[bid] -= 1
 
         # Auto-place into the lowest empty slot(s). New building starts unmanned.
@@ -870,12 +888,7 @@ def builder_apply(state: GameState, action: Action) -> None:
 
 def _advance_builder(state: GameState) -> None:
     """Advance ``order_pos``; end the role when every player has acted."""
-    ps = state.phase_state
-    ps.order_pos += 1
-    if ps.order_pos >= len(ps.order):
-        end_of_role(state)
-    else:
-        state.current_player = ps.order[ps.order_pos]
+    _advance_order(state)
 
 
 register_role_phase(
@@ -965,8 +978,8 @@ def _manned_building_circles(player, good: Good) -> int:
         bid = slot.building
         if bid is None or bid == BuildingId.LARGE_CONT:
             continue
-        spec = buildings.CATALOG.get(bid)
-        if spec is None or not spec.is_production or spec.produces != good:
+        spec = buildings.CATALOG[bid]
+        if not spec.is_production or spec.produces != good:
             continue
         total += min(slot.colonists, spec.capacity)
     return total
@@ -1164,12 +1177,7 @@ def trader_apply(state: GameState, action: Action) -> None:
 
 def _advance_trader(state: GameState) -> None:
     """Advance ``order_pos``; end the role when every player has acted."""
-    ps = state.phase_state
-    ps.order_pos += 1
-    if ps.order_pos >= len(ps.order):
-        end_of_role(state)
-    else:
-        state.current_player = ps.order[ps.order_pos]
+    _advance_order(state)
 
 
 def trader_last_duty(state: GameState) -> None:
@@ -1714,19 +1722,6 @@ def _unload_full_ships(state: GameState) -> None:
             state.goods_supply[ship.good] += ship.count
             ship.good = None
             ship.count = 0
-
-
-def captain_last_duty(state: GameState) -> None:
-    """Legacy captain end-of-phase (auto-store all players + unload full ships).
-
-    NOT registered as the phase ``last_duty`` anymore — interactive storage and
-    ship unloading now run in the storage sub-phase (:func:`_finish_storage`).
-    Retained for direct callers/tests that want the non-interactive resolution.
-    """
-    order = state.phase_state.order or list(range(len(state.players)))
-    for player_idx in order:
-        _store_goods_for_player(state, player_idx)
-    _unload_full_ships(state)
 
 
 register_role_phase(
