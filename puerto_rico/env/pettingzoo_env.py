@@ -147,7 +147,7 @@ class PuertoRicoAEC(AECEnv):
                 f"(not set in the legality mask)"
             )
 
-        act = action_codec.from_int(int(action), self.game)
+        act = action_codec.from_int(int(action), self.game.state)
         self.game.apply(act, validate=False)
 
         # Default: no per-step reward. Dense end-of-round shaping (scaled by

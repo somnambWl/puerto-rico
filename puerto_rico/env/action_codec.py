@@ -68,9 +68,15 @@ from __future__ import annotations
 
 import numpy as np
 
+from typing import TYPE_CHECKING
+
 from puerto_rico.engine.actions import Action
 from puerto_rico.engine.enums import BuildingId, DecisionType, Good, Role, TileType
 from puerto_rico.engine.phases import CAPTAIN_WHARF, MAYOR_STORE
+from puerto_rico.engine.setup import CITY_SLOTS, ISLAND_SLOTS
+
+if TYPE_CHECKING:
+    from puerto_rico.engine.game import Game
 
 # --------------------------------------------------------------------------- #
 # block sizes                                                                 #
@@ -80,10 +86,12 @@ from puerto_rico.engine.phases import CAPTAIN_WHARF, MAYOR_STORE
 N_ROLES = 7
 #: TAKE_TILE kinds: QUARRY + 5 plantations (TileType values 1..6; EMPTY excluded).
 N_TILES = 6
-#: City building slots a colonist can be placed on.
-N_CITY_SLOTS = 12
-#: Island plantation/quarry slots a colonist can be placed on.
-N_ISLAND_SLOTS = 12
+#: City building slots a colonist can be placed on. Derived from the engine's
+#: authoritative board size so a board-size change propagates here.
+N_CITY_SLOTS = CITY_SLOTS
+#: Island plantation/quarry slots a colonist can be placed on. Derived from the
+#: engine's authoritative board size.
+N_ISLAND_SLOTS = ISLAND_SLOTS
 #: Real buildings in the catalog (BuildingId 0..22).
 N_BUILDINGS = 23
 #: Tradeable/producible goods.
@@ -183,7 +191,8 @@ def to_int(action: Action) -> int:
         return LOAD_CARGO_OFFSET + int(action.good) * MAX_SHIPS + ship_idx
 
     if t == DecisionType.CHOOSE:
-        # Only the craftsman extra-good pick (good set) is emitted today.
+        # Both the craftsman extra-good pick and the captain windrose storage
+        # choice emit Action(CHOOSE, good=g); the engine dispatches by phase.
         return CHOOSE_OFFSET + int(action.good)
 
     if t == DecisionType.PASS:
@@ -197,13 +206,14 @@ def to_int(action: Action) -> int:
 # --------------------------------------------------------------------------- #
 
 
-def from_int(i: int, state) -> Action:
+def from_int(i: int, state=None) -> Action:
     """Decode id ``i`` back to the exact ``Action`` the engine expects.
 
-    ``state`` is accepted for parity with the design (some decoders may need it),
-    but the chosen encoding is self-contained: every block is a direct bijection,
-    so no state lookup is required to reconstruct the engine-equal ``Action``.
-    The decoded action is ``==`` to its counterpart in ``state.legal_actions()``.
+    ``state`` is accepted for symmetry with the design (some decoders may need
+    it) but is **not required** and is ignored here: the chosen encoding is
+    self-contained — every block is a direct bijection, so no state lookup is
+    needed to reconstruct the engine-equal ``Action``. The decoded action is
+    ``==`` to its counterpart in ``state.legal_actions()``.
     """
     if not 0 <= i < N_ACTIONS:
         raise ValueError(f"action id {i} out of range [0, {N_ACTIONS})")
@@ -250,15 +260,17 @@ def from_int(i: int, state) -> Action:
 # --------------------------------------------------------------------------- #
 
 
-def mask(state) -> np.ndarray:
-    """Boolean legality mask of shape ``(N_ACTIONS,)`` for ``state``.
+def mask(game: "Game") -> np.ndarray:
+    """Boolean legality mask of shape ``(N_ACTIONS,)`` for ``game``.
 
-    Built directly from ``state.legal_actions()`` so it can never diverge from
-    engine legality. Exactly ``len(state.legal_actions())`` entries are ``True``;
+    Built directly from ``game.legal_actions()`` so it can never diverge from
+    engine legality. Exactly ``len(game.legal_actions())`` entries are ``True``;
     each ``True`` id decodes (``from_int``) to an action in ``legal_actions()``.
+    Takes the ``Game`` facade (not a bare ``GameState``) because it calls
+    ``legal_actions()``.
     """
     m = np.zeros(N_ACTIONS, dtype=bool)
-    for a in state.legal_actions():
+    for a in game.legal_actions():
         m[to_int(a)] = True
     return m
 
@@ -277,9 +289,9 @@ class ActionCodec:
         return to_int(action)
 
     @staticmethod
-    def from_int(i: int, state) -> Action:
+    def from_int(i: int, state=None) -> Action:
         return from_int(i, state)
 
     @staticmethod
-    def mask(state) -> np.ndarray:
-        return mask(state)
+    def mask(game: "Game") -> np.ndarray:
+        return mask(game)

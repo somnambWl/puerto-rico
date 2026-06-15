@@ -85,7 +85,11 @@ _MAX_VP_REMAINING = 100.0  # 4p VP pool.
 _MAX_BUILDING_SUPPLY = 2.0  # production buildings have 2 copies, beige have 1.
 
 _MAX_COLONISTS_TO_PLACE = 12.0  # mayor placement scratch.
-_MAX_ORDER_LEN = float(MAX_PLAYERS)
+# Cap for seat-relative *indices* (order_pos, current_player_rel). These range
+# 0..num_players-1, so dividing by MAX_PLAYERS leaves the top of [0, 1] slightly
+# unreachable (e.g. 3/4 at 4 players). Kept as MAX_PLAYERS for a stable cap that
+# never clips across configs; it is an upper bound, not the literal max index.
+_MAX_ORDER_INDEX_CAP = float(MAX_PLAYERS)
 
 
 # --------------------------------------------------------------------------- #
@@ -301,12 +305,12 @@ def _write_phase_block(
     out[i] = 1.0 if ps.active_role is None else 0.0; i += 1
 
     out[i] = _norm(ps.colonists_to_place, _MAX_COLONISTS_TO_PLACE); i += 1
-    out[i] = _norm(ps.order_pos, _MAX_ORDER_LEN); i += 1
+    out[i] = _norm(ps.order_pos, _MAX_ORDER_INDEX_CAP); i += 1
 
     # Current player relative to perspective (0 == perspective is to move).
     n = len(state.players)
     rel = (state.current_player - perspective) % n
-    out[i] = _norm(rel, _MAX_ORDER_LEN); i += 1
+    out[i] = _norm(rel, _MAX_ORDER_INDEX_CAP); i += 1
     return i
 
 
