@@ -58,6 +58,7 @@ configurable on the pool. The intent (design/05): *mostly* self / recent policy,
 from __future__ import annotations
 
 import copy
+import re
 from collections import deque
 from dataclasses import dataclass, field
 from typing import Callable
@@ -102,6 +103,25 @@ class Snapshot:
 def _cpu_clone_state_dict(state_dict: dict) -> dict:
     """Deep-copy a state_dict onto CPU, detached, so it never aliases live weights."""
     return {k: v.detach().to("cpu").clone() for k, v in state_dict.items()}
+
+
+def _factory_for_state_dict(state_dict: dict) -> Callable[[], MaskedActorCritic]:
+    """Build a ``MaskedActorCritic`` factory matching ``state_dict``'s shapes.
+
+    Infers ``obs_dim``, the ``hidden`` tuple and ``n_actions`` from the saved
+    ``torso.*.weight`` / ``policy_head.weight`` tensors so snapshots from a
+    non-default (e.g. wider/deeper) network rebuild correctly. The torso is an
+    ``nn.Sequential`` of ``Linear`` layers at even indices (0, 2, 4, ...).
+    """
+    torso_idxs = sorted(
+        int(m.group(1))
+        for k in state_dict
+        if (m := re.match(r"torso\.(\d+)\.weight$", k))
+    )
+    hidden = tuple(int(state_dict[f"torso.{i}.weight"].shape[0]) for i in torso_idxs)
+    obs_dim = int(state_dict[f"torso.{torso_idxs[0]}.weight"].shape[1])
+    n_actions = int(state_dict["policy_head.weight"].shape[0])
+    return lambda: MaskedActorCritic(obs_dim, n_actions, hidden)
 
 
 # --------------------------------------------------------------------------- #
@@ -272,9 +292,17 @@ class OpponentPool:
         return {"random": self._random_opp, "heuristic": self._heuristic_opp}
 
     def snapshot_opponent(self, snap: Snapshot) -> OpponentFn:
-        """Build a frozen-policy opponent callable for ``snap``."""
+        """Build a frozen-policy opponent callable for ``snap``.
+
+        The network shell is rebuilt to match the snapshot's *actual* layer
+        shapes (read from its ``state_dict``) so snapshots from a non-default
+        (e.g. wider) :class:`MaskedActorCritic` load correctly.
+        """
+        factory = _factory_for_state_dict(snap.state_dict)
         return make_snapshot_opponent(
-            snap.state_dict, deterministic=self.deterministic_opponents
+            snap.state_dict,
+            deterministic=self.deterministic_opponents,
+            model_factory=factory,
         )
 
     # ----- sampling ----------------------------------------------------- #

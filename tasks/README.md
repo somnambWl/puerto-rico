@@ -17,7 +17,7 @@ Deeper strategic decisions + stronger AI (user request: model must be able to be
 | E5 | Backend: action-preview endpoint + building catalog/descriptions + good values | done | ui-backend |
 | E6 | Frontend: tooltips, step/pause AI playback, VP-sorted shelf, trading values, action preview | done | E5 |
 | E7 | RL strategy audit (measurable strong-play signatures) | done | E4 |
-| E8 | Improve RL toward dominant strategies (if audit finds gaps) | not started | E7 |
+| E8 | Improve RL toward dominant strategies (if audit finds gaps) | done | E7 |
 
 ## Epic: engine-core
 Design: `design/00-overview-and-architecture.md`, `design/01-engine-core-and-state.md`

@@ -137,6 +137,13 @@ class PPOConfig:
 
     # self-play / opponent pool
     self_play_prob: float = 0.5
+    # Per-seat probability that a *mixed* non-learner seat is the LIVE policy
+    # ("self") rather than a frozen snapshot / baseline (heuristic|random). When
+    # None it defaults to ``self_play_prob`` (legacy coupling). Set it LOWER than
+    # ``self_play_prob`` to mix the pool often (high self_play_prob) while making
+    # those mixed seats more often strong baselines / frozen snapshots — i.e.
+    # heavier exposure to strong opponents without starving the learner of seats.
+    pool_self_play_prob: float | None = None
     snapshot_interval: int = 20  # iters between freezing a snapshot + checkpoint
     max_snapshots: int = 10
 
@@ -425,7 +432,9 @@ def _opponent_assignment(
     num_opp = int(rng.integers(1, max_opp + 1))  # 1..num_players-1
     # learner takes the low seats; opponents fill the top ones.
     opp_seats = list(range(cfg.num_players - num_opp, cfg.num_players))
-    fns = pool.sample_opponents(num_opp, policy, rng=rng)
+    fns = pool.sample_opponents(
+        num_opp, policy, self_play_prob=cfg.pool_self_play_prob, rng=rng
+    )
     return dict(zip(opp_seats, fns))
 
 
@@ -441,7 +450,12 @@ def train(cfg: PPOConfig) -> str:
     policy = MaskedActorCritic(OBS_LEN, N_ACTIONS, tuple(cfg.hidden)).to(cfg.device)
     optimizer = torch.optim.Adam(policy.parameters(), lr=cfg.lr)
     pool = OpponentPool(
-        max_snapshots=cfg.max_snapshots, self_play_prob=cfg.self_play_prob
+        max_snapshots=cfg.max_snapshots,
+        self_play_prob=(
+            cfg.self_play_prob
+            if cfg.pool_self_play_prob is None
+            else cfg.pool_self_play_prob
+        ),
     )
 
     final_path = out_dir / "final.pt"
