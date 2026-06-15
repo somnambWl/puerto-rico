@@ -5,8 +5,9 @@
  *
  * The backend is authoritative: every field here matches a field the server
  * sends. The display-name maps near the bottom mirror the engine enums
- * (enums.py) and the buildings CATALOG (buildings.py) so the renderer can show
- * human-readable names without re-deriving any rules.
+ * (enums.py) so the renderer can show human-readable names without re-deriving
+ * any rules. Building metadata (names, costs, VP, capacity) is NOT duplicated
+ * here: /catalog is the single source of truth (see catalog.tsx).
  */
 
 // --------------------------------------------------------------------------- //
@@ -254,51 +255,11 @@ export const PHASE_NAMES: Record<number, string> = {
   7: "Game over",
 };
 
-/** BuildingId enum -> { name, cost, vp, large } (buildings.py :: CATALOG). */
-export interface BuildingMeta {
-  name: string;
-  cost: number;
-  vp: number;
-  /** Large beige building (column 4): spans two city slots. */
-  large: boolean;
-}
-
+/**
+ * BuildingId sentinel for the second slot of a placed large building (column 4
+ * buildings span two city slots; the continuation slot carries this id).
+ */
 export const LARGE_CONT = 99;
-
-export const BUILDINGS: Record<number, BuildingMeta> = {
-  // production buildings
-  0: { name: "Small Indigo Plant", cost: 1, vp: 1, large: false },
-  1: { name: "Indigo Plant", cost: 3, vp: 2, large: false },
-  2: { name: "Small Sugar Mill", cost: 2, vp: 1, large: false },
-  3: { name: "Sugar Mill", cost: 4, vp: 2, large: false },
-  4: { name: "Tobacco Storage", cost: 5, vp: 3, large: false },
-  5: { name: "Coffee Roaster", cost: 6, vp: 3, large: false },
-  // small beige buildings
-  6: { name: "Small Market", cost: 1, vp: 1, large: false },
-  7: { name: "Hacienda", cost: 2, vp: 1, large: false },
-  8: { name: "Construction Hut", cost: 2, vp: 1, large: false },
-  9: { name: "Small Warehouse", cost: 3, vp: 1, large: false },
-  10: { name: "Hospice", cost: 4, vp: 2, large: false },
-  11: { name: "Office", cost: 5, vp: 2, large: false },
-  12: { name: "Large Market", cost: 5, vp: 2, large: false },
-  13: { name: "Large Warehouse", cost: 6, vp: 2, large: false },
-  14: { name: "Factory", cost: 7, vp: 3, large: false },
-  15: { name: "University", cost: 8, vp: 3, large: false },
-  16: { name: "Harbor", cost: 8, vp: 3, large: false },
-  17: { name: "Wharf", cost: 9, vp: 3, large: false },
-  // large beige buildings (span two slots)
-  18: { name: "Guild Hall", cost: 10, vp: 4, large: true },
-  19: { name: "Residence", cost: 10, vp: 4, large: true },
-  20: { name: "Fortress", cost: 10, vp: 4, large: true },
-  21: { name: "Customs House", cost: 10, vp: 4, large: true },
-  22: { name: "City Hall", cost: 10, vp: 4, large: true },
-};
-
-export function buildingName(id: number | null): string {
-  if (id === null) return "";
-  if (id === LARGE_CONT) return "";
-  return BUILDINGS[id]?.name ?? `building ${id}`;
-}
 
 // --------------------------------------------------------------------------- //
 // Highlight model (Board <- ActionPrompt hover)                                //

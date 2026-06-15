@@ -9,11 +9,14 @@
  *
  * Hover highlighting is best-effort: the backend only gives us `label` + `kind`
  * (no structured detail), so we parse the human-readable label for a tile /
- * building / ship / role / good reference and emit a `Highlight` for the Board.
+ * building / role / good reference and emit a `Highlight` for the Board. Ship
+ * (LOAD) labels carry only a quantity (e.g. "Ship 3 Tobacco"), not a ship id,
+ * so the `ship` kind highlights the cargo-ships area generically.
  */
 
-import type { Highlight, LegalAction } from "../types";
-import { BUILDINGS, GOOD_NAMES, ROLE_NAMES } from "../types";
+import { useCatalog } from "../catalog";
+import type { Catalog, Highlight, LegalAction } from "../types";
+import { GOOD_NAMES, ROLE_NAMES } from "../types";
 
 interface ActionPromptProps {
   legalActions: LegalAction[];
@@ -50,14 +53,25 @@ const KIND_ORDER = [
   "pass",
 ];
 
-/** Best-effort: parse a label into a board highlight. */
-function highlightFor(action: LegalAction): Highlight {
+/**
+ * Best-effort: parse a label into a board highlight. Building names come from
+ * the /catalog (so they stay correct if the engine renames a building); the
+ * shipping (LOAD) label has no ship id, so a `ship`-kind action highlights all
+ * cargo ships generically (index < 0).
+ */
+function highlightFor(action: LegalAction, catalog: Catalog | null): Highlight {
   const label = action.label.toLowerCase();
 
-  // Building reference (build kind, or any label naming a building).
-  for (const [id, meta] of Object.entries(BUILDINGS)) {
-    if (label.includes(meta.name.toLowerCase())) {
-      return { kind: "building", buildingId: Number(id) };
+  // Building reference (build kind, or any label naming a building). Match the
+  // longest catalog name first so "Small Indigo Plant" beats "Indigo Plant".
+  if (catalog) {
+    const byLen = [...catalog.buildings].sort(
+      (a, b) => b.name.length - a.name.length,
+    );
+    for (const b of byLen) {
+      if (label.includes(b.name.toLowerCase())) {
+        return { kind: "building", buildingId: b.id };
+      }
     }
   }
   // Role reference.
@@ -66,11 +80,10 @@ function highlightFor(action: LegalAction): Highlight {
       return { kind: "role", role: Number(r) };
     }
   }
-  // Ship reference, e.g. "... ship #2" / "ship 2".
-  const shipMatch = label.match(/ship\s*#?\s*(\d+)/);
-  if (shipMatch) {
-    const n = Number(shipMatch[1]);
-    return { kind: "ship", index: n - 1 };
+  // Shipping: LOAD labels are "Ship <qty> <Good>" — the number is a quantity,
+  // not a ship id, so highlight the cargo-ships area as a whole.
+  if (action.kind === "ship") {
+    return { kind: "ship", index: -1 };
   }
   // Good reference (corn / indigo / sugar / tobacco / coffee).
   for (const [g, name] of Object.entries(GOOD_NAMES)) {
@@ -89,6 +102,7 @@ export function ActionPrompt({
   onHighlight,
   onPreview,
 }: ActionPromptProps) {
+  const catalog = useCatalog();
   if (aiThinking) {
     return (
       <div className="action-prompt">
@@ -139,11 +153,11 @@ export function ActionPrompt({
                   onAction(a.id);
                 }}
                 onMouseEnter={() => {
-                  onHighlight(highlightFor(a));
+                  onHighlight(highlightFor(a, catalog));
                   if (!disabled) onPreview?.(a);
                 }}
                 onFocus={() => {
-                  onHighlight(highlightFor(a));
+                  onHighlight(highlightFor(a, catalog));
                   if (!disabled) onPreview?.(a);
                 }}
                 onMouseLeave={() => {

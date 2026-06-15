@@ -284,11 +284,6 @@ button {
 }
 
 /* buildings shelf */
-.building-shelf {
-  display: flex;
-  gap: 6px;
-  flex-wrap: wrap;
-}
 .shelf-building {
   padding: 6px 8px;
   background: var(--panel-2);

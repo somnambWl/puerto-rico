@@ -81,6 +81,11 @@ export function useGameState(gameId: string | null): GameStateHook {
   const pausedRef = useRef(false);
   const speedRef = useRef<PlaybackSpeed>("normal");
   const shownRef = useRef(0); // frames shown in the active sequence
+  // True once ANY state has been adopted (from a WS frame or the seed GET).
+  // Used so a late-arriving GET response can't clobber a WS frame that already
+  // populated the board (the old `currentState === null` closure check captured
+  // the initial null and so was always satisfied).
+  const hasInitial = useRef(false);
 
   useEffect(() => {
     speedRef.current = speed;
@@ -97,6 +102,7 @@ export function useGameState(gameId: string | null): GameStateHook {
   const showNext = useCallback((): boolean => {
     const next = queueRef.current.shift();
     if (next === undefined) return false;
+    hasInitial.current = true;
     setCurrentState(next);
     setLogFeed((prev) => [...prev, next]);
     shownRef.current += 1;
@@ -178,6 +184,7 @@ export function useGameState(gameId: string | null): GameStateHook {
     setLogFeed((prev) => [...prev, ...q]);
     shownRef.current += q.length;
     queueRef.current = [];
+    hasInitial.current = true;
     setCurrentState(last);
     setPlaybackIndex(shownRef.current);
     setPendingCount(0);
@@ -191,10 +198,16 @@ export function useGameState(gameId: string | null): GameStateHook {
     if (!gameId) return;
 
     let cancelled = false;
+    hasInitial.current = false;
 
     getState(gameId)
       .then((s) => {
-        if (!cancelled && currentState === null) setCurrentState(s);
+        // Only seed from the GET if no WS frame has populated the board yet —
+        // the socket may have delivered a fresher state before this resolved.
+        if (!cancelled && !hasInitial.current) {
+          hasInitial.current = true;
+          setCurrentState(s);
+        }
       })
       .catch(() => {
         /* the socket frame will populate it shortly */
@@ -227,11 +240,17 @@ export function useGameState(gameId: string | null): GameStateHook {
       if (frame.type === "sequence") {
         enqueue(frame.states);
       } else if (frame.type === "state") {
-        const { type: _t, ...state } = frame;
-        void _t;
+        // Strip the discriminant `type` field; the rest is a StateMsg. We only
+        // adopt a streamed single-state frame when no sequence is animating
+        // (sequence playback is driven from the one "sequence" frame instead).
+        const { type, ...rest } = frame;
+        const state = rest as StateMsg;
         if (queueRef.current.length === 0 && timerRef.current === null) {
-          setCurrentState(state as StateMsg);
+          hasInitial.current = true;
+          setCurrentState(state);
         }
+        // `type` is intentionally unused — destructured only to omit it.
+        void type;
       } else if (frame.type === "error") {
         setError(frame.message);
       }
@@ -243,6 +262,11 @@ export function useGameState(gameId: string | null): GameStateHook {
       queueRef.current = [];
       ws.close();
     };
+    // We intentionally re-open the socket only on gameId (and enqueue, which is
+    // stable) changes. `clearTimer` is stable; all other values touched inside
+    // are refs/state-setters, which React guarantees are stable and so don't
+    // belong in the dep array. Listing them would needlessly tear down and
+    // re-open the WebSocket. (exhaustive-deps relaxed for this reason.)
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [gameId, enqueue]);
 

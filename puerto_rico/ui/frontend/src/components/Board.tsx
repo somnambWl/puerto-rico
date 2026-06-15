@@ -112,8 +112,12 @@ export function Board({ view, highlight, onPlantationClick }: BoardProps) {
             <span className="ship-fill">{view.colonist_ship} colonists</span>
           </div>
           {view.cargo_ships.map((s, i) => {
+            // index < 0 is a generic "all cargo ships" highlight (LOAD labels
+            // carry only a quantity, no ship id), otherwise a specific ship.
             const hl =
-              highlight && highlight.kind === "ship" && highlight.index === i;
+              highlight &&
+              highlight.kind === "ship" &&
+              (highlight.index < 0 || highlight.index === i);
             const color = s.good !== null ? GOOD_COLORS[s.good] : "#444";
             return (
               <div

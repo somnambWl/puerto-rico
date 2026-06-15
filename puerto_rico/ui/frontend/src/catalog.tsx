@@ -3,14 +3,16 @@
  *
  * Fetched once on app start (App.tsx) and provided here so Board / PlayerBoard /
  * ActionPrompt can render names, costs, VP, capacity, descriptions and good
- * base values without re-deriving any rules. When the fetch fails the context is
- * null and consumers fall back to the hardcoded BUILDINGS / GOOD_NAMES maps in
- * types.ts via the helper hooks below.
+ * base values without re-deriving any rules. /catalog is the single source of
+ * truth for building metadata: when the fetch fails the context is null,
+ * `useBuildingInfo` returns null for every id, and consumers degrade to a
+ * generic "building N" label. Good names/values still have a thin local
+ * fallback (`useGoodInfo`) since those are tiny, stable engine enums.
  */
 
 import { createContext, useContext, useMemo } from "react";
 
-import { BUILDINGS, GOOD_NAMES } from "./types";
+import { GOOD_NAMES } from "./types";
 import type { Catalog, CatalogBuilding, CatalogGood } from "./types";
 
 const CatalogContext = createContext<Catalog | null>(null);
@@ -33,7 +35,12 @@ export function useCatalog(): Catalog | null {
   return useContext(CatalogContext);
 }
 
-/** Building meta lookup keyed by id, with a hardcoded fallback. */
+/**
+ * Building meta lookup keyed by id. Returns the catalog entry, or null when the
+ * catalog is unavailable / the id is unknown. /catalog is authoritative — we do
+ * NOT synthesize a fallback entry (a fabricated capacity/cost would be wrong);
+ * callers render a generic placeholder when this returns null.
+ */
 export function useBuildingInfo(): (id: number) => CatalogBuilding | null {
   const catalog = useContext(CatalogContext);
   return useMemo(() => {
@@ -41,26 +48,7 @@ export function useBuildingInfo(): (id: number) => CatalogBuilding | null {
     if (catalog) {
       for (const b of catalog.buildings) byId.set(b.id, b);
     }
-    return (id: number): CatalogBuilding | null => {
-      const hit = byId.get(id);
-      if (hit) return hit;
-      const fb = BUILDINGS[id];
-      if (!fb) return null;
-      // Synthesize a minimal entry from the fallback map.
-      return {
-        id,
-        name: fb.name,
-        cost: fb.cost,
-        column: 0,
-        vp: fb.vp,
-        capacity: fb.large ? 0 : 1,
-        is_large: fb.large,
-        is_production: false,
-        produces: null,
-        kind: fb.large ? "large" : "small",
-        description: "",
-      };
-    };
+    return (id: number): CatalogBuilding | null => byId.get(id) ?? null;
   }, [catalog]);
 }
 

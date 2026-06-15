@@ -14,23 +14,21 @@
  * (the previous frame's to_move) and the phase it acted in.
  */
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 
-import { createGame, getCatalog, previewAction, type Opponent } from "./api";
+import { createGame, getCatalog, type Opponent } from "./api";
 import { CatalogProvider, useBuildingInfo } from "./catalog";
 import { Board } from "./components/Board";
 import { GameOver } from "./components/GameOver";
-import { Log, type LogEntry } from "./components/Log";
+import { Log } from "./components/Log";
 import { PlaybackBar } from "./components/PlaybackBar";
 import { PlayerBoard } from "./components/PlayerBoard";
 import { ActionPrompt } from "./components/ActionPrompt";
 import { PreviewPanel } from "./components/PreviewPanel";
-import { computePreviewDiff, type PreviewDiff } from "./preview";
 import { useGameState } from "./hooks/useGameState";
-import type { Catalog, Highlight, LegalAction, StateMsg } from "./types";
-import { PHASE_NAMES } from "./types";
-
-const PREVIEW_DEBOUNCE_MS = 120;
+import { useActionPreview } from "./hooks/useActionPreview";
+import { useLogEntries } from "./hooks/useLogEntries";
+import type { Catalog, Highlight } from "./types";
 
 interface GameSetup {
   gameId: string;
@@ -41,7 +39,8 @@ export default function App() {
   const [setup, setSetup] = useState<GameSetup | null>(null);
 
   // Fetch the static catalog once on app start. Failure is non-fatal — the
-  // catalog context stays null and components fall back to the hardcoded maps.
+  // catalog context stays null and building lookups degrade to a generic
+  // "building N" label (see catalog.tsx :: useBuildingInfo).
   const [catalog, setCatalog] = useState<Catalog | null>(null);
   useEffect(() => {
     let cancelled = false;
@@ -50,7 +49,7 @@ export default function App() {
         if (!cancelled) setCatalog(c);
       })
       .catch(() => {
-        /* fall back to hardcoded BUILDINGS / GOOD_NAMES maps */
+        /* non-fatal: building names fall back to "building N" */
       });
     return () => {
       cancelled = true;
@@ -81,9 +80,57 @@ export default function App() {
     }
   }, [opponent, seedText, humanSeat]);
 
-  if (!setup) {
-    return (
-      <CatalogProvider catalog={catalog}>
+  // One CatalogProvider at the root covers both the start screen and the game
+  // view, so the catalog context is never duplicated.
+  return (
+    <CatalogProvider catalog={catalog}>
+      {setup ? (
+        <GameView
+          gameId={setup.gameId}
+          humanSeat={setup.humanSeat}
+          onNewGame={() => setSetup(null)}
+        />
+      ) : (
+        <StartScreen
+          opponent={opponent}
+          setOpponent={setOpponent}
+          humanSeat={humanSeat}
+          setHumanSeat={setHumanSeat}
+          seedText={seedText}
+          setSeedText={setSeedText}
+          creating={creating}
+          createError={createError}
+          onStart={onStart}
+        />
+      )}
+    </CatalogProvider>
+  );
+}
+
+interface StartScreenProps {
+  opponent: Opponent;
+  setOpponent: (o: Opponent) => void;
+  humanSeat: number;
+  setHumanSeat: (s: number) => void;
+  seedText: string;
+  setSeedText: (s: string) => void;
+  creating: boolean;
+  createError: string | null;
+  onStart: () => void;
+}
+
+function StartScreen({
+  opponent,
+  setOpponent,
+  humanSeat,
+  setHumanSeat,
+  seedText,
+  setSeedText,
+  creating,
+  createError,
+  onStart,
+}: StartScreenProps) {
+  return (
       <div className="start-screen">
         <h1>Puerto Rico</h1>
         <div className="start-form">
@@ -128,18 +175,6 @@ export default function App() {
           {createError && <div className="error">{createError}</div>}
         </div>
       </div>
-      </CatalogProvider>
-    );
-  }
-
-  return (
-    <CatalogProvider catalog={catalog}>
-      <GameView
-        gameId={setup.gameId}
-        humanSeat={setup.humanSeat}
-        onNewGame={() => setSetup(null)}
-      />
-    </CatalogProvider>
   );
 }
 
@@ -176,160 +211,29 @@ function GameView({ gameId, humanSeat, onNewGame }: GameViewProps) {
   const buildingInfo = useBuildingInfo();
 
   const [highlight, setHighlight] = useState<Highlight>(null);
-  const [logEntries, setLogEntries] = useState<LogEntry[]>([]);
 
-  // --- Action preview (hover a legal action -> diff the resulting state) --- //
-  const [previewLabel, setPreviewLabel] = useState<string | null>(null);
-  const [previewDiff, setPreviewDiff] = useState<PreviewDiff | null>(null);
-  const [previewLoading, setPreviewLoading] = useState(false);
-  const [previewHighlight, setPreviewHighlight] = useState<Highlight>(null);
-  const previewTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const previewAbort = useRef<AbortController | null>(null);
-  // Cache preview diffs per action id, scoped to the current decision state.
-  const previewCache = useRef<Map<number, PreviewDiff>>(new Map());
-  const previewStateKey = useRef<string>("");
-
-  // Track the human's last chosen label so the resulting frame logs correctly.
-  const pendingHumanLabel = useRef<string | null>(null);
-  // The previous frame (whose to_move identifies who just acted).
-  const prevFrame = useRef<StateMsg | null>(null);
-  const consumedCount = useRef(0);
+  const { logEntries, recordHumanAction } = useLogEntries(logFeed, humanSeat);
+  const {
+    previewLabel,
+    previewDiff,
+    previewLoading,
+    previewHighlight,
+    onPreview,
+    clearPreview,
+  } = useActionPreview(gameId, currentState, humanSeat, buildingInfo);
 
   const playerNames = useMemo(
     () => [0, 1, 2, 3].map((s) => playerName(s, humanSeat)),
     [humanSeat],
   );
 
-  // Build log entries from newly consumed frames in logFeed.
-  useEffect(() => {
-    if (logFeed.length <= consumedCount.current) return;
-    const newEntries: LogEntry[] = [];
-    for (let i = consumedCount.current; i < logFeed.length; i++) {
-      const frame = logFeed[i];
-      const prev = prevFrame.current;
-      // The seat that just acted is the previous frame's to_move; if we have no
-      // previous frame, fall back to the human seat.
-      const actorSeat = prev ? prev.to_move : humanSeat;
-      const phaseName =
-        PHASE_NAMES[prev ? prev.view.phase : frame.view.phase] ?? "move";
-      let label: string;
-      if (actorSeat === humanSeat && pendingHumanLabel.current) {
-        label = pendingHumanLabel.current;
-        pendingHumanLabel.current = null;
-      } else {
-        label = `${phaseName} action`;
-      }
-      newEntries.push({
-        seat: actorSeat,
-        label,
-        isHuman: actorSeat === humanSeat,
-      });
-      prevFrame.current = frame;
-    }
-    consumedCount.current = logFeed.length;
-    if (newEntries.length > 0) {
-      setLogEntries((prev) => [...prev, ...newEntries]);
-    }
-  }, [logFeed, humanSeat]);
-
   const onAction = useCallback(
     (id: number) => {
       const action = currentState?.legal_actions.find((a) => a.id === id);
-      pendingHumanLabel.current = action?.label ?? "move";
-      // Seed prevFrame with the state the human is acting from, so the first
-      // resulting frame attributes the action to the human.
-      if (currentState) prevFrame.current = currentState;
+      if (currentState) recordHumanAction(currentState, action?.label ?? "move");
       sendAction(id);
     },
-    [currentState, sendAction],
-  );
-
-  // A key identifying the current human-decision state, so the preview cache is
-  // invalidated whenever the decision context changes.
-  const decisionKey = useMemo(() => {
-    if (!currentState) return "";
-    const v = currentState.view;
-    return `${v.phase}:${currentState.to_move}:${currentState.legal_actions
-      .map((a) => a.id)
-      .join(",")}`;
-  }, [currentState]);
-
-  const clearPreview = useCallback(() => {
-    if (previewTimer.current !== null) {
-      clearTimeout(previewTimer.current);
-      previewTimer.current = null;
-    }
-    if (previewAbort.current !== null) {
-      previewAbort.current.abort();
-      previewAbort.current = null;
-    }
-    setPreviewLabel(null);
-    setPreviewDiff(null);
-    setPreviewLoading(false);
-    setPreviewHighlight(null);
-  }, []);
-
-  const onPreview = useCallback(
-    (action: LegalAction | null) => {
-      // Reset the cache if the decision context changed.
-      if (previewStateKey.current !== decisionKey) {
-        previewStateKey.current = decisionKey;
-        previewCache.current.clear();
-      }
-      if (action === null) {
-        clearPreview();
-        return;
-      }
-      if (!currentState) return;
-
-      setPreviewLabel(action.label);
-
-      // Serve from cache immediately if present.
-      const cached = previewCache.current.get(action.id);
-      if (cached) {
-        if (previewTimer.current !== null) {
-          clearTimeout(previewTimer.current);
-          previewTimer.current = null;
-        }
-        setPreviewDiff(cached);
-        setPreviewLoading(false);
-        setPreviewHighlight(cached.highlight);
-        return;
-      }
-
-      setPreviewDiff(null);
-      setPreviewLoading(true);
-      setPreviewHighlight(null);
-
-      // Debounce the network request; cancel any in-flight one.
-      if (previewTimer.current !== null) clearTimeout(previewTimer.current);
-      previewTimer.current = setTimeout(() => {
-        if (previewAbort.current !== null) previewAbort.current.abort();
-        const ctrl = new AbortController();
-        previewAbort.current = ctrl;
-        const keyAtRequest = decisionKey;
-        previewAction(gameId, action.id, ctrl.signal)
-          .then((after) => {
-            // Ignore stale responses (decision changed or hover moved on).
-            if (keyAtRequest !== previewStateKey.current) return;
-            const diff = computePreviewDiff(
-              currentState,
-              after,
-              humanSeat,
-              buildingInfo,
-            );
-            previewCache.current.set(action.id, diff);
-            setPreviewDiff(diff);
-            setPreviewLoading(false);
-            setPreviewHighlight(diff.highlight);
-          })
-          .catch(() => {
-            /* aborted or failed — leave the panel showing the label only */
-            setPreviewLoading(false);
-          });
-      }, PREVIEW_DEBOUNCE_MS);
-    },
-    [clearPreview, currentState, decisionKey, gameId, humanSeat, buildingInfo],
+    [currentState, recordHumanAction, sendAction],
   );
 
   // Disable / clear preview while AI playback is animating.

@@ -20,6 +20,9 @@ interface InfoTooltipProps {
 }
 
 const TOOLTIP_W = 240;
+// Assumed max tooltip height, used only to decide whether to flip the tooltip
+// above the cursor so it doesn't clip off the bottom of the viewport.
+const TOOLTIP_EST_H = 160;
 const MARGIN = 8;
 
 export function InfoTooltip({ content, children, className }: InfoTooltipProps) {
@@ -37,7 +40,8 @@ export function InfoTooltip({ content, children, className }: InfoTooltipProps) 
       if (x < MARGIN) x = MARGIN;
       // Below the cursor; clamp so it stays on-screen vertically.
       let y = clientY + 16;
-      if (y + 160 + MARGIN > vh) y = Math.max(MARGIN, clientY - 160);
+      if (y + TOOLTIP_EST_H + MARGIN > vh)
+        y = Math.max(MARGIN, clientY - TOOLTIP_EST_H);
       setPos({ x, y });
     });
   }, []);
