@@ -25,3 +25,6 @@ mnt/
 # OS / editor
 .DS_Store
 *.swp
+
+# tsc/vite build cache
+puerto_rico/ui/frontend/tsconfig.tsbuildinfo
