@@ -27,9 +27,9 @@ Opponent callable contract
 ---------------------------
 An opponent is any ``callable(game) -> int`` returning a *legal* discrete action
 id (see :mod:`puerto_rico.env.action_codec`). ``game`` is the live engine
-:class:`~puerto_rico.engine.game.Game`. Adapters for the baseline agents are
-provided: :func:`wrap_heuristic` (HeuristicAgent.act takes the game) and
-:func:`wrap_random` (RandomAgent.act takes the obs dict).
+:class:`~puerto_rico.engine.game.Game`. Every baseline agent exposes the canonical
+``act_id(game) -> int`` interface, so the adapters here are now thin shims over it
+(:func:`wrap_heuristic`, :func:`wrap_random`), kept for backward-compatible imports.
 
 Reward model
 ------------
@@ -77,28 +77,24 @@ OpponentFn = Callable[[Game], int]
 
 
 def wrap_heuristic(agent) -> OpponentFn:
-    """Adapt a ``HeuristicAgent`` (``act(game) -> Action``) to ``opp(game) -> int``."""
+    """Adapt a baseline agent to ``opp(game) -> int`` via its ``act_id(game)``.
 
-    def _fn(game: Game) -> int:
-        return action_codec.to_int(agent.act(game))
+    Backward-compatible shim: all baseline agents now expose the canonical
+    ``act_id(game) -> int`` interface, so this routes through it (one mechanism).
+    """
 
-    return _fn
+    return lambda game: int(agent.act_id(game))
 
 
 def wrap_random(agent, *, perspective_is_current: bool = True) -> OpponentFn:
-    """Adapt a ``RandomAgent`` (``act(obs_dict) -> int``) to ``opp(game) -> int``.
+    """Adapt a ``RandomAgent`` to ``opp(game) -> int`` via its ``act_id(game)``.
 
-    The random agent only needs the action mask, so we hand it an obs dict built
-    from the current seat's perspective.
+    Backward-compatible shim: ``RandomAgent`` now exposes ``act_id(game)`` (it
+    builds the obs dict internally and samples), so this routes through it — the
+    same single mechanism used for every baseline.
     """
 
-    def _fn(game: Game) -> int:
-        seat = game.current_player
-        obs = obs_codec.encode(game.state, seat)
-        m = action_codec.mask(game).astype(np.float32)
-        return int(agent.act({"observation": obs, "action_mask": m}))
-
-    return _fn
+    return lambda game: int(agent.act_id(game))
 
 
 # --------------------------------------------------------------------------- #

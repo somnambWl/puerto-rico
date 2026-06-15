@@ -12,7 +12,7 @@ What the pool holds
 * The two fixed **baselines**, always present:
   :class:`~puerto_rico.agents.random_agent.RandomAgent` and
   :class:`~puerto_rico.agents.heuristic_agent.HeuristicAgent`. These are adapted
-  to the opponent contract with :func:`rollout.wrap_random` / ``wrap_heuristic``.
+  to the opponent contract via their canonical ``act_id(game) -> int`` interface.
 * A bounded list of **frozen policy snapshots** — past ``MaskedActorCritic``
   weights captured during training, each tagged with its ``iteration`` and
   optional metadata (e.g. Elo). Snapshots are stored as deep-copied **CPU**
@@ -57,21 +57,18 @@ configurable on the pool. The intent (design/05): *mostly* self / recent policy,
 
 from __future__ import annotations
 
-import copy
 import re
 from collections import deque
 from dataclasses import dataclass, field
 from typing import Callable
 
 import numpy as np
-import torch
 
 from ..agents.heuristic_agent import HeuristicAgent
 from ..agents.random_agent import RandomAgent
-from ..engine.game import Game
-from ..env import action_codec, obs_codec
+from .inference import policy_act_id
 from .model import MaskedActorCritic
-from .rollout import OpponentFn, wrap_heuristic, wrap_random
+from .rollout import OpponentFn
 
 __all__ = [
     "Snapshot",
@@ -132,20 +129,12 @@ def _factory_for_state_dict(state_dict: dict) -> Callable[[], MaskedActorCritic]
 def _policy_opponent(policy: MaskedActorCritic, *, deterministic: bool) -> OpponentFn:
     """Build a ``callable(game) -> int`` from a (ready) ``MaskedActorCritic``.
 
-    Uses the same obs/action codec path as :func:`rollout.collect_rollouts`, so the
+    Delegates to the shared :func:`~puerto_rico.training.inference.policy_act_id`,
+    the same obs/action codec path :func:`rollout.collect_rollouts` uses, so the
     opponent's behaviour is consistent with how the learner is rolled out.
     """
 
-    def _fn(game: Game) -> int:
-        seat = game.current_player
-        obs_np = obs_codec.encode(game.state, seat)
-        mask_np = action_codec.mask(game).astype(np.float32)
-        obs_t = torch.as_tensor(obs_np)
-        mask_t = torch.as_tensor(mask_np)
-        action_t, _, _ = policy.act(obs_t, mask_t, deterministic=deterministic)
-        return int(action_t.item())
-
-    return _fn
+    return lambda game: policy_act_id(policy, game, deterministic=deterministic)
 
 
 def make_snapshot_opponent(
@@ -240,11 +229,14 @@ class OpponentPool:
 
         self._snapshots: deque[Snapshot] = deque()
 
-        # Always-present baselines, adapted to the opponent contract.
+        # Always-present baselines, adapted to the opponent contract via the
+        # canonical ``act_id(game) -> int`` interface every baseline exposes.
         self._random_agent = RandomAgent(seed=random_seed)
         self._heuristic_agent = HeuristicAgent(seed=heuristic_seed)
-        self._random_opp = wrap_random(self._random_agent)
-        self._heuristic_opp = wrap_heuristic(self._heuristic_agent)
+        self._random_opp: OpponentFn = lambda game: int(self._random_agent.act_id(game))
+        self._heuristic_opp: OpponentFn = lambda game: int(
+            self._heuristic_agent.act_id(game)
+        )
 
     # ----- size / inspection ------------------------------------------- #
 

@@ -48,16 +48,14 @@ Run::
 
 from __future__ import annotations
 
-import re
 import shutil
 import time
 from pathlib import Path
 
 from ..agents.heuristic_agent import HeuristicAgent
-from ..agents.random_agent import RandomAgent
 from ..agents.rl_policy import RLPolicy
-from .evaluate import Arena, benchmark_vs_heuristic, benchmark_vs_random
 from .ppo import PPOConfig, limit_cpu_usage, train
+from .train_utils import final_benchmark, select_best
 from . import strategy_audit
 
 # --------------------------------------------------------------------------- #
@@ -157,71 +155,6 @@ def calibrate_iters(threads: int) -> int:
 
 
 # --------------------------------------------------------------------------- #
-# checkpoint discovery + selection (mirrors train_strong)                      #
-# --------------------------------------------------------------------------- #
-
-
-def _iter_key(path: Path) -> tuple[int, int]:
-    if path.name == "final.pt":
-        return (1, 1 << 30)
-    m = re.search(r"checkpoint_(\d+)\.pt$", path.name)
-    return (0, int(m.group(1)) if m else -1)
-
-
-def discover_checkpoints(out_dir: Path) -> list[Path]:
-    ckpts = list(out_dir.glob("checkpoint_*.pt"))
-    final = out_dir / "final.pt"
-    if final.exists():
-        ckpts.append(final)
-    return sorted(ckpts, key=_iter_key)
-
-
-def _label(path: Path) -> str:
-    if path.name == "final.pt":
-        return "final"
-    m = re.search(r"checkpoint_(\d+)\.pt$", path.name)
-    return m.group(1) if m else path.name
-
-
-def select_best(out_dir: Path) -> tuple[Path, list[dict]]:
-    """Evaluate every checkpoint vs heuristic (+random); return (best, curve)."""
-    ckpts = discover_checkpoints(out_dir)
-    if not ckpts:
-        raise FileNotFoundError(f"no checkpoints found in {out_dir}")
-
-    curve: list[dict] = []
-    print("\n" + "=" * 72)
-    print("BEST-CHECKPOINT SELECTION")
-    print(
-        f"  scoring each checkpoint over {SELECT_GAMES_HEURISTIC} games vs heuristic"
-        f" + {SELECT_GAMES_RANDOM} vs random (seat-rotated, deterministic)"
-    )
-    print("=" * 72)
-    print(f"{'iter':>8}{'wr_vs_heuristic':>18}{'wr_vs_random':>15}{'time':>9}")
-    print("-" * 72)
-
-    for path in ckpts:
-        t0 = time.time()
-        policy = RLPolicy.from_checkpoint(path, deterministic=True)
-        wr_h = benchmark_vs_heuristic(
-            policy, num_games=SELECT_GAMES_HEURISTIC, seed=5678
-        )
-        wr_r = benchmark_vs_random(policy, num_games=SELECT_GAMES_RANDOM, seed=4242)
-        dt = time.time() - t0
-        label = _label(path)
-        curve.append({"iter": label, "path": path, "wr_heur": wr_h, "wr_rand": wr_r})
-        print(f"{label:>8}{wr_h:>18.3f}{wr_r:>15.3f}{dt:>8.1f}s", flush=True)
-
-    best = max(curve, key=lambda c: (c["wr_heur"], c["wr_rand"]))
-    print("-" * 72)
-    print(
-        f"BEST: iter={best['iter']}  wr_vs_heuristic={best['wr_heur']:.3f}  "
-        f"wr_vs_random={best['wr_rand']:.3f}"
-    )
-    return best["path"], curve
-
-
-# --------------------------------------------------------------------------- #
 # audit-gap signature for an arbitrary checkpoint                              #
 # --------------------------------------------------------------------------- #
 
@@ -229,18 +162,18 @@ def select_best(out_dir: Path) -> tuple[Path, list[dict]]:
 def gap_signature(checkpoint: Path, num_games: int = AUDIT_GAMES) -> dict:
     """Run the audit's RL line-ups for ``checkpoint`` and extract the gap metrics.
 
-    Reuses :mod:`strategy_audit` internals (``_run_lineup``) so the numbers match
-    the published audit exactly. Returns win rate vs heuristic plus the four gap
+    Reuses the public :func:`strategy_audit.run_lineup` so the numbers match the
+    published audit exactly. Returns win rate vs heuristic plus the four gap
     signatures (Guild Hall %, unmanned, chain mismatch, corn-no-engine).
     """
     rl = RLPolicy.from_checkpoint(checkpoint, deterministic=True)
 
     # 4x RL self-play -> manning / chains / Guild Hall / corn signatures.
-    rl_self = strategy_audit._run_lineup([rl, rl, rl, rl], {0, 1, 2, 3}, num_games, 0)
+    rl_self = strategy_audit.run_lineup([rl, rl, rl, rl], {0, 1, 2, 3}, num_games, 0)
 
     # 1x RL vs 3x Heuristic -> head-to-head win rate.
     mixed = [rl] + [HeuristicAgent(seed=300 + i) for i in range(strategy_audit.NUM_PLAYERS - 1)]
-    rvh = strategy_audit._run_lineup(mixed, {0}, num_games, 0)
+    rvh = strategy_audit.run_lineup(mixed, {0}, num_games, 0)
     wr_vs_heur = rvh["winners"] / max(1, rvh["games_as_target"])
 
     return {
@@ -286,50 +219,6 @@ def print_before_after(before: dict, after: dict) -> None:
         mark = "=" if same else ("YES" if improved else "no")
         print(f"{label:<32}{bs:>12}{as_:>12}{mark:>10}")
     print("-" * 72)
-
-
-# --------------------------------------------------------------------------- #
-# final rigorous benchmark                                                     #
-# --------------------------------------------------------------------------- #
-
-
-def final_benchmark(release_pt: Path) -> dict:
-    print("\n" + "=" * 72)
-    print("FINAL RIGOROUS BENCHMARK OF RELEASE POLICY")
-    print(f"  checkpoint: {release_pt.resolve()}")
-    print("=" * 72)
-
-    policy = RLPolicy.from_checkpoint(release_pt, deterministic=True)
-
-    t0 = time.time()
-    wr_heur = benchmark_vs_heuristic(policy, num_games=FINAL_GAMES, seed=99001)
-    print(
-        f"win rate vs 3 HeuristicAgents over {FINAL_GAMES} games: "
-        f"{wr_heur:.3f}  ({time.time() - t0:.1f}s)"
-    )
-
-    t0 = time.time()
-    wr_rand = benchmark_vs_random(policy, num_games=FINAL_GAMES, seed=99002)
-    print(
-        f"win rate vs 3 RandomAgents over {FINAL_GAMES} games:    "
-        f"{wr_rand:.3f}  ({time.time() - t0:.1f}s)"
-    )
-
-    print("\nArena: {RL, Heuristic, Random, Random}")
-    arena = Arena(
-        [
-            ("rl", RLPolicy.from_checkpoint(release_pt, deterministic=True)),
-            ("heuristic", HeuristicAgent(seed=2)),
-            ("random1", RandomAgent(seed=3)),
-            ("random2", RandomAgent(seed=4)),
-        ],
-        num_players=4,
-        seed=7,
-    )
-    result = arena.run(ARENA_GAMES)
-    print(result.to_table())
-
-    return {"wr_heur": wr_heur, "wr_rand": wr_rand, "arena": result}
 
 
 # --------------------------------------------------------------------------- #
@@ -419,7 +308,11 @@ def main() -> dict:
     print(f"training done in {train_secs / 60:.1f} min -> {final_path}")
 
     # Best-checkpoint selection.
-    best_path, curve = select_best(OUT_DIR)
+    best_path, curve = select_best(
+        OUT_DIR,
+        select_games_heuristic=SELECT_GAMES_HEURISTIC,
+        select_games_random=SELECT_GAMES_RANDOM,
+    )
 
     # Always preserve the candidate at runs/improved/final.pt.
     shutil.copyfile(best_path, IMPROVED_PT)
@@ -450,7 +343,7 @@ def main() -> dict:
         print(f"  candidate preserved at {IMPROVED_PT.resolve()}")
 
     # Final rigorous benchmark of WHATEVER is now the release.
-    final = final_benchmark(RELEASE_PT)
+    final = final_benchmark(RELEASE_PT, final_games=FINAL_GAMES, arena_games=ARENA_GAMES)
 
     print("\n" + "=" * 72)
     print("DONE")

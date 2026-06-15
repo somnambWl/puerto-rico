@@ -62,6 +62,25 @@ import numpy as np
 import torch
 from torch import nn
 
+from ..agents.heuristic_agent import HeuristicAgent
+from ..agents.random_agent import RandomAgent
+from ..engine.game import Game
+from ..engine.state import GameConfig
+from ..env import action_codec
+from ..env.action_codec import N_ACTIONS
+from ..env.obs_codec import OBS_LEN
+from .inference import policy_act_id
+from .model import MaskedActorCritic
+from .opponent_pool import OpponentPool
+from .rollout import collect_rollouts, wrap_heuristic, wrap_random
+
+# Codec version tags baked into the artifact so a loader can detect a mismatch
+# between the encoding it expects and the one the policy was trained on.
+OBS_CODEC_VERSION = 1
+ACTION_CODEC_VERSION = 1
+ARTIFACT_FORMAT = "puerto_rico.rl_policy"
+ARTIFACT_VERSION = 1
+
 
 def limit_cpu_usage(leave_free: int = 2) -> int:
     """Cap PyTorch's CPU thread pool so long training runs keep the machine usable.
@@ -79,24 +98,6 @@ def limit_cpu_usage(leave_free: int = 2) -> int:
         threads = max(1, cores - max(0, leave_free))
     torch.set_num_threads(threads)
     return threads
-
-from ..agents.heuristic_agent import HeuristicAgent
-from ..agents.random_agent import RandomAgent
-from ..engine.game import Game
-from ..engine.state import GameConfig
-from ..env import action_codec, obs_codec
-from ..env.action_codec import N_ACTIONS
-from ..env.obs_codec import OBS_LEN
-from .model import MaskedActorCritic
-from .opponent_pool import OpponentPool
-from .rollout import collect_rollouts, wrap_heuristic, wrap_random
-
-# Codec version tags baked into the artifact so a loader can detect a mismatch
-# between the encoding it expects and the one the policy was trained on.
-OBS_CODEC_VERSION = 1
-ACTION_CODEC_VERSION = 1
-ARTIFACT_FORMAT = "puerto_rico.rl_policy"
-ARTIFACT_VERSION = 1
 
 
 # --------------------------------------------------------------------------- #
@@ -277,7 +278,7 @@ def ppo_update(
             optimizer.step()
 
             with torch.no_grad():
-                approx_kl = (-log_ratio).mean()  # k1 estimator
+                approx_kl = (-log_ratio).mean()  # k2 estimator: E[-log ratio]
                 clip_frac = (
                     (torch.abs(ratio - 1.0) > cfg.clip).float().mean()
                 )
@@ -301,14 +302,12 @@ def ppo_update(
 
 
 def _policy_action(policy: MaskedActorCritic, game: Game, device: str) -> int:
-    """Deterministic (argmax) legal action id for the current seat."""
-    seat = game.current_player
-    obs_np = obs_codec.encode(game.state, seat)
-    mask_np = action_codec.mask(game).astype(np.float32)
-    obs_t = torch.as_tensor(obs_np, device=device)
-    mask_t = torch.as_tensor(mask_np, device=device)
-    action_t, _, _ = policy.act(obs_t, mask_t, deterministic=True)
-    return int(action_t.item())
+    """Deterministic (argmax) legal action id for the current seat.
+
+    Thin wrapper over the shared
+    :func:`~puerto_rico.training.inference.policy_act_id` (deterministic).
+    """
+    return policy_act_id(policy, game, device=device, deterministic=True)
 
 
 def evaluate_vs(
@@ -441,7 +440,9 @@ def _opponent_assignment(
 def train(cfg: PPOConfig) -> str:
     """Run the PPO self-play loop and return the path to ``final.pt``."""
     torch.manual_seed(cfg.seed)
-    np.random.seed(cfg.seed)
+    # Seeding is explicit: the rollout/opponent RNGs are seeded ``np.random.Generator``
+    # instances (no global ``np.random.*`` is used in the training path), so the
+    # legacy global ``np.random.seed`` is intentionally omitted.
     rng = np.random.default_rng(cfg.seed)
 
     out_dir = Path(cfg.out_dir)

@@ -41,6 +41,7 @@ import torch
 
 from ..engine.actions import Action
 from ..env import action_codec, obs_codec
+from ..training.inference import policy_act_id  # codec+model only — NOT the loop
 from ..training.model import MaskedActorCritic  # model only — NOT the trainer loop
 
 # Mirrors the constants the trainer bakes into the artifact (ppo.py). Kept local so
@@ -159,22 +160,15 @@ class RLPolicy:
     # ------------------------------------------------------------------ #
 
     def _action_id(self, game, deterministic: bool) -> int:
-        """Masked forward pass -> a legal discrete action id for the current seat."""
-        perspective = game.current_player
-        obs_np = obs_codec.encode(game.state, perspective)
-        # ``action_codec.mask`` calls ``.legal_actions()`` on its argument; the
-        # engine exposes that on ``Game`` (not ``GameState``), so pass the game —
-        # matching the trainer's eval path (training/ppo.py).
-        mask_np = action_codec.mask(game).astype("float32")
+        """Masked forward pass -> a legal discrete action id for the current seat.
 
-        obs_t = torch.as_tensor(obs_np, dtype=torch.float32, device=self.device)
-        mask_t = torch.as_tensor(mask_np, dtype=torch.float32, device=self.device)
-
-        with torch.no_grad():
-            action_t, _, _ = self.policy.act(
-                obs_t, mask_t, deterministic=deterministic
-            )
-        return int(action_t.item())
+        Delegates to the shared :func:`~puerto_rico.training.inference.policy_act_id`
+        helper (encode obs -> build mask -> masked ``act`` -> int), the same path
+        the trainer / opponent pool use, so behaviour is identical everywhere.
+        """
+        return policy_act_id(
+            self.policy, game, device=str(self.device), deterministic=deterministic
+        )
 
     def act_id(self, game, *, deterministic: bool | None = None) -> int:
         """Return the discrete action id the policy chooses for ``game``.

@@ -476,7 +476,7 @@ def _finalize(acc: dict) -> dict:
 # --------------------------------------------------------------------------- #
 
 
-def _run_lineup(
+def run_lineup(
     agents: list, target_lineup_idx: set[int], num_games: int, seed: int
 ) -> dict:
     """Play ``num_games`` seat-rotated games; aggregate the TARGET agent's seats.
@@ -485,6 +485,9 @@ def _run_lineup(
     order). ``target_lineup_idx`` is the set of line-up indices whose seats we
     accumulate (the agent type we are auditing in this line-up). Seat rotation
     matches the Arena: line-up index ``a`` sits at seat ``(a + g) % N``.
+
+    Public entry point reused by :mod:`puerto_rico.training.train_improved` to
+    compute audit-gap signatures with the exact same instrumentation as the audit.
     """
     n = NUM_PLAYERS
     fns = [make_player(a) for a in agents]
@@ -505,6 +508,10 @@ def _run_lineup(
             )
 
     return _finalize(acc)
+
+
+# Backward-compatible private alias (kept for any internal callers / tests).
+_run_lineup = run_lineup
 
 
 # --------------------------------------------------------------------------- #
@@ -543,13 +550,13 @@ def run_audit(num_games: int = 200, seed: int = 0) -> dict:
 
     # 4x Heuristic
     heur = [HeuristicAgent(seed=100 + i) for i in range(NUM_PLAYERS)]
-    agents_metrics["Heuristic"] = _run_lineup(
+    agents_metrics["Heuristic"] = run_lineup(
         heur, {0, 1, 2, 3}, num_games, seed
     )
 
     # 4x Random
     rand = [RandomAgent(seed=200 + i) for i in range(NUM_PLAYERS)]
-    agents_metrics["Random"] = _run_lineup(
+    agents_metrics["Random"] = run_lineup(
         rand, {0, 1, 2, 3}, num_games, seed
     )
 
@@ -557,13 +564,13 @@ def run_audit(num_games: int = 200, seed: int = 0) -> dict:
     if rl_available:
         # 4x RL self-play (one shared stateless policy is fine; it is reused).
         rl_lineup = [rl, rl, rl, rl]
-        agents_metrics["RL"] = _run_lineup(
+        agents_metrics["RL"] = run_lineup(
             rl_lineup, {0, 1, 2, 3}, num_games, seed
         )
 
         # 1x RL vs 3x Heuristic (RL is line-up index 0).
         mixed = [rl] + [HeuristicAgent(seed=300 + i) for i in range(NUM_PLAYERS - 1)]
-        rl_vs_heuristic = _run_lineup(mixed, {0}, num_games, seed)
+        rl_vs_heuristic = run_lineup(mixed, {0}, num_games, seed)
 
     return {
         "agents": agents_metrics,

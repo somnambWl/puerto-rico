@@ -2,12 +2,23 @@
 
 The sanity baseline and win-rate floor: it picks uniformly among the actions the
 env marks legal (``action_mask == 1``). It never returns a masked-illegal id.
+
+Interfaces
+----------
+``RandomAgent`` is the canonical **obs-based** agent: :meth:`act` consumes the env
+observation dict (``{"observation", "action_mask"}``) the way the PettingZoo env
+emits it. For parity with the game-based agents (HeuristicAgent / RLPolicy) it
+also exposes :meth:`act_id` ``(game) -> int``, which builds that obs dict from the
+live :class:`~puerto_rico.engine.game.Game` and dispatches to :meth:`act`, so the
+arena / UI / opponent-pool can treat all three baselines uniformly via
+``act_id(game)``.
 """
 
 from __future__ import annotations
 
 import numpy as np
 
+from ..env import action_codec, obs_codec
 from .base import Agent
 
 
@@ -36,6 +47,19 @@ class RandomAgent(Agent):
             )
         generator = rng if rng is not None else self._rng
         return int(generator.choice(legal))
+
+    def act_id(self, game) -> int:
+        """Return a uniform-random legal action id for ``game.current_player``.
+
+        Builds the same masked observation dict the env emits (``obs_codec.encode``
+        + ``action_codec.mask`` for the acting seat) and dispatches to :meth:`act`,
+        so the random agent presents the game-based ``act_id(game)`` interface used
+        by the arena / opponent pool while reusing its one sampling code path.
+        """
+        seat = game.current_player
+        obs = obs_codec.encode(game.state, seat)
+        mask = action_codec.mask(game).astype(np.float32)
+        return self.act({"observation": obs, "action_mask": mask})
 
     def reset(self) -> None:
         """No per-episode state to clear."""

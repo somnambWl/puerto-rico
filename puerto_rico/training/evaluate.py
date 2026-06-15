@@ -16,11 +16,10 @@ The baseline agents have *different* call interfaces (see design/05):
 
 The arena driver needs a single shape, so everything is normalized to a
 ``PlayerFn = callable(game) -> int`` returning a *legal* discrete action id (the
-same contract as :data:`puerto_rico.training.rollout.OpponentFn`). The adapters
-are reused from :mod:`puerto_rico.training.rollout` (``wrap_random`` /
-``wrap_heuristic``); :func:`make_player` dispatches by duck-typing so any of the
-three agent kinds — or any object already exposing ``act_id(game)`` or already a
-bare callable — becomes a ``PlayerFn``.
+same contract as :data:`puerto_rico.training.rollout.OpponentFn`). Every baseline
+now exposes the canonical ``act_id(game) -> int`` interface, so :func:`make_player`
+simply uses ``act_id`` when present, else treats an already-bare ``callable(game)``
+as-is.
 
 Seat-rotation scheme
 --------------------
@@ -60,7 +59,6 @@ from ..engine import scoring
 from ..engine.game import Game
 from ..engine.state import GameConfig
 from ..env import action_codec
-from .rollout import wrap_heuristic, wrap_random
 
 # A player drives the current seat: receives the live Game, returns a legal id.
 PlayerFn = Callable[[Game], int]
@@ -76,32 +74,23 @@ def make_player(agent) -> PlayerFn:
 
     Dispatch (duck-typed, in priority order):
 
-    1. already a ``PlayerFn`` with no ``act``/``act_id`` — used as-is;
-    2. exposes ``act_id(game)`` (HeuristicAgent, RLPolicy) — call it directly;
-    3. exposes obs-based ``act(obs_dict)`` (RandomAgent) — wrap with
-       :func:`~puerto_rico.training.rollout.wrap_random`;
-    4. exposes ``act(game)`` returning an :class:`Action` (a game-based agent
-       without ``act_id``) — wrap with
-       :func:`~puerto_rico.training.rollout.wrap_heuristic`.
-    """
-    if hasattr(agent, "act_id"):
-        return lambda game: int(agent.act_id(game))
+    1. exposes ``act_id(game)`` (every baseline: RandomAgent, HeuristicAgent,
+       RLPolicy) — call it directly;
+    2. already a bare ``callable(game) -> int`` (e.g. a ``PlayerFn`` returned by a
+       previous ``make_player``) — used as-is.
 
-    if hasattr(agent, "act"):
-        # Distinguish obs-based (RandomAgent) from game-based agents. RandomAgent
-        # is the canonical obs-based agent; detect it structurally by class name
-        # OR by the absence of a game-based signal. We treat anything with an
-        # ``_rng`` and the RandomAgent name as obs-based, else game-based.
-        if type(agent).__name__ == "RandomAgent":
-            return wrap_random(agent)
-        return wrap_heuristic(agent)
+    All three baselines implement ``act_id`` now, so the legacy class-name check is
+    gone and there is a single canonical mechanism.
+    """
+    if hasattr(agent, "act_id") and callable(agent.act_id):
+        return lambda game: int(agent.act_id(game))
 
     if callable(agent):
         return lambda game: int(agent(game))
 
     raise TypeError(
         f"cannot adapt {type(agent).__name__!r} to a player; expected an object "
-        "with act_id(game)/act(...) or a callable(game)->int"
+        "with act_id(game) or a callable(game)->int"
     )
 
 

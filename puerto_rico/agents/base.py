@@ -1,17 +1,28 @@
 """Shared ``Agent`` protocol that every concrete agent conforms to (design/05).
 
-All agents consume the *same* masked observation dict the PettingZoo env emits
-(:class:`~puerto_rico.env.pettingzoo_env.PuertoRicoAEC`), so they are
-interchangeable in the arena, in evaluation, and in the UI.
+Two interchangeable interfaces
+------------------------------
+Concrete agents expose **two** decision entry points, and the arena / evaluation /
+UI / opponent pool all drive agents through the *game-based* one:
 
-The observation dict has the RLlib-standard masked-action shape::
+* ``act_id(game) -> int`` — the **canonical** interface. Given the live engine
+  :class:`~puerto_rico.engine.game.Game` (it is ``game.current_player``'s turn),
+  return a legal discrete action id. Every baseline (``RandomAgent``,
+  ``HeuristicAgent``, ``RLPolicy``) implements this, so callers can treat them
+  uniformly as ``callable(game) -> int`` (see
+  :func:`puerto_rico.training.evaluate.make_player`).
+* ``act(obs, *, rng=None) -> int`` — the **env-facing** interface. Consumes the
+  masked observation dict the PettingZoo env emits
+  (:class:`~puerto_rico.env.pettingzoo_env.PuertoRicoAEC`)::
 
-    {"observation": float32[OBS_LEN], "action_mask": int8[N_ACTIONS]}
+      {"observation": float32[OBS_LEN], "action_mask": int8[N_ACTIONS]}
 
-where ``action_mask[i] == 1`` means action id ``i`` is legal in the current
-state. An agent's :meth:`Agent.act` must always return an id whose mask entry is
-``1`` (the engine is the single source of truth for legality; agents never
-reimplement rules).
+  where ``action_mask[i] == 1`` means action id ``i`` is legal. ``RandomAgent`` is
+  the canonical obs-based agent (its ``act_id`` builds the obs dict and calls
+  ``act``); the game-based agents take a ``Game`` directly.
+
+Either way the engine is the single source of truth for legality — every returned
+id is legal and agents never reimplement rules.
 """
 
 from __future__ import annotations
@@ -24,7 +35,9 @@ class Agent(Protocol):
     """Structural protocol for a Puerto Rico decision policy.
 
     Implemented structurally: any object exposing ``act`` and ``reset`` with
-    these signatures is an ``Agent`` — no explicit subclassing required.
+    these signatures is an ``Agent`` — no explicit subclassing required. The
+    canonical game-based ``act_id(game) -> int`` interface is documented at module
+    level and implemented by every concrete agent.
     """
 
     def act(self, obs: dict, *, rng=None) -> int:
