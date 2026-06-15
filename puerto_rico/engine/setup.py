@@ -138,15 +138,60 @@ def _build_goods_supply(removed_each: int) -> list[int]:
     return supply
 
 
-def _build_buildings_supply() -> dict[BuildingId, int]:
-    """Initial ``buildings_supply`` counts keyed by ``BuildingId``.
+# --------------------------------------------------------------------------- #
+# Building supply (on-board copies)                                            #
+# --------------------------------------------------------------------------- #
+#
+# Standard 3-5 player base game (docs/puerto-rico-rules.md "Buildings on the
+# board"): TWO of each small violet (beige) building and ONE of each large
+# violet building. The 2-player variant uses the reduced counts (1 of each
+# beige, 2 of each production) and is applied as an override below.
+#
+# This is an EXPLICIT per-building table (not derived from CATALOG) so the
+# counts are correct and easy to change.
+BUILDING_SUPPLY: dict[BuildingId, int] = {
+    # --- production buildings (6) --- standard base-game tile counts (20 tiles).
+    BuildingId.SMALL_INDIGO: 4,
+    BuildingId.INDIGO_PLANT: 3,
+    BuildingId.SMALL_SUGAR: 4,
+    BuildingId.SUGAR_MILL: 3,
+    BuildingId.TOBACCO_STORAGE: 3,
+    BuildingId.COFFEE_ROASTER: 3,
+    # --- small violet (beige) buildings (12): 2 each ---
+    BuildingId.SMALL_MARKET: 2,
+    BuildingId.HACIENDA: 2,
+    BuildingId.CONSTRUCTION_HUT: 2,
+    BuildingId.SMALL_WAREHOUSE: 2,
+    BuildingId.HOSPICE: 2,
+    BuildingId.OFFICE: 2,
+    BuildingId.LARGE_MARKET: 2,
+    BuildingId.LARGE_WAREHOUSE: 2,
+    BuildingId.FACTORY: 2,
+    BuildingId.UNIVERSITY: 2,
+    BuildingId.HARBOR: 2,
+    BuildingId.WHARF: 2,
+    # --- large violet buildings (5): 1 each ---
+    BuildingId.GUILD_HALL: 1,
+    BuildingId.RESIDENCE: 1,
+    BuildingId.FORTRESS: 1,
+    BuildingId.CUSTOMS_HOUSE: 1,
+    BuildingId.CITY_HALL: 1,
+}
 
-    Data-driven from ``buildings.CATALOG``. Standard base-game on-board supply
-    (docs/puerto-rico-rules.md "Buildings on the board": **1 of each beige**,
-    **2 of each** production building). Each player may build any building only
-    once, so a single beige copy suffices; production buildings have two copies.
-    The ``LARGE_CONT`` sentinel is not a real building and is skipped.
+
+def building_supply_for(num_players: int) -> dict[BuildingId, int]:
+    """Public helper: on-board building-supply totals for ``num_players``.
+
+    Returns the standard 3-5 player counts (``BUILDING_SUPPLY``) for
+    ``num_players >= 3``. For the 2-player variant, the reduced rule applies
+    (docs/puerto-rico-rules.md line 292): **1 of each beige** building (small
+    AND large) and **2 of each** production building.
+
+    A fresh dict is returned each call so callers may mutate it freely.
     """
+    if num_players >= 3:
+        return dict(BUILDING_SUPPLY)
+    # 2-player override: 1 of each beige, 2 of each production.
     supply: dict[BuildingId, int] = {}
     for bid, spec in CATALOG.items():
         supply[bid] = 2 if spec.is_production else 1
@@ -217,7 +262,7 @@ def new_game(config: GameConfig) -> GameState:
         plantation_discard=[],
         quarry_supply=s["quarry_supply"],
         vp_chips_remaining=s["vp_pool"],
-        buildings_supply=_build_buildings_supply(),
+        buildings_supply=building_supply_for(n),
         phase_state=PhaseState(),
         end_triggered=False,
     )

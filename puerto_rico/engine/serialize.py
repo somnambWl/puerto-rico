@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import random
 
+from . import scoring
 from .enums import BuildingId, Good, Phase, Role, TileType
 from .phase_state import PhaseState
 from .state import (
@@ -261,15 +262,23 @@ def from_dict(d: dict) -> GameState:
 # --------------------------------------------------------------------------- #
 
 
-def _player_public(p: PlayerState, *, hide_vp: bool) -> dict:
-    """Public dict for one player. ``hide_vp`` masks the secret VP-chip total."""
+def _player_public(state: GameState, i: int) -> dict:
+    """Public dict for player ``i``.
+
+    VP is public in the UI (it is countable from buildings + shipped goods), so
+    ``vp_chips`` is always exposed. A ``score`` field gives the player's current
+    total VP if the game ended now (``scoring.final_score``: vp_chips + printed
+    building VP + occupied large-building bonuses).
+    """
+    p = state.players[i]
     return {
         "doubloons": p.doubloons,
         "island": [_island_to_dict(s) for s in p.island],
         "city": [_city_to_dict(s) for s in p.city],
         "goods": list(p.goods),
         "stored_colonists": p.stored_colonists,
-        "vp_chips": None if hide_vp else p.vp_chips,
+        "vp_chips": p.vp_chips,
+        "score": scoring.final_score(state, i),
         "roles_taken_this_round": p.roles_taken_this_round,
     }
 
@@ -278,12 +287,14 @@ def public_view(state: GameState, perspective: int | None = None) -> dict:
     """A UI-facing snapshot that hides hidden information.
 
     Hidden information in Puerto Rico:
-    - Other players' ``vp_chips`` (face-down, secret). When ``perspective`` is a
-      player index, only that player's VP total is exposed; the others are
-      ``None``. When ``perspective`` is ``None`` (god/spectator view), all VP
-      totals are shown.
     - The identity and ordering of ``plantation_facedown`` (the draw stack):
       always exposed as a count only, never as tile contents.
+
+    VP is intentionally PUBLIC here: every player's ``vp_chips`` is shown for all
+    seats, plus a per-player ``score`` (current ``scoring.final_score``). VP is
+    countable from owned buildings + shipped goods, so the UI surfaces it for all
+    players. (The RL observation in ``obs_codec`` still hides opponent VP — only
+    this UI-facing view exposes it.)
 
     Everything else (roles, doubloons, buildings, island tiles + colonists,
     goods, face-up plantations, ships, supplies) is public.
@@ -291,11 +302,7 @@ def public_view(state: GameState, perspective: int | None = None) -> dict:
     return {
         "config": _config_to_dict(state.config),
         "players": [
-            _player_public(
-                p,
-                hide_vp=(perspective is not None and i != perspective),
-            )
-            for i, p in enumerate(state.players)
+            _player_public(state, i) for i in range(len(state.players))
         ],
         "perspective": perspective,
         "governor": state.governor,

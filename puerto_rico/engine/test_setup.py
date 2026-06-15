@@ -2,8 +2,8 @@
 
 from __future__ import annotations
 
-from .enums import Good, Phase, Role, TileType
-from .setup import new_game
+from .enums import BuildingId, Good, Phase, Role, TileType
+from .setup import building_supply_for, new_game
 from .state import GameConfig
 
 
@@ -63,6 +63,16 @@ def test_4player_initial_state() -> None:
     assert state.goods_supply[Good.TOBACCO] == 9
     assert state.goods_supply[Good.COFFEE] == 9
 
+    # Building supply (3-5p standard counts): 2 of each small violet, 1 of each
+    # large violet, interim production counts.
+    bs = state.buildings_supply
+    assert bs[BuildingId.HOSPICE] == 2
+    assert bs[BuildingId.HARBOR] == 2
+    assert bs[BuildingId.GUILD_HALL] == 1
+    assert bs[BuildingId.CITY_HALL] == 1
+    assert bs[BuildingId.SMALL_INDIGO] == 4
+    assert bs[BuildingId.SUGAR_MILL] == 3
+
     # Trading house empty.
     assert state.trading_house == []
 
@@ -90,6 +100,18 @@ def test_determinism_same_seed_identical_faceup() -> None:
     b = new_game(GameConfig(num_players=4, seed=42))
     assert a.plantation_faceup == b.plantation_faceup
     assert a.plantation_facedown == b.plantation_facedown
+
+
+def test_building_supply_for_2player_reduced() -> None:
+    # 2-player variant: 1 of each beige (small AND large), 2 of each production.
+    supply = building_supply_for(2)
+    assert supply[BuildingId.HOSPICE] == 1
+    assert supply[BuildingId.GUILD_HALL] == 1
+    assert supply[BuildingId.SMALL_INDIGO] == 2
+    assert supply[BuildingId.SUGAR_MILL] == 2
+    # And new_game(2p) uses it.
+    state = new_game(GameConfig(num_players=2, seed=0))
+    assert state.buildings_supply[BuildingId.HOSPICE] == 1
 
 
 def test_determinism_different_seeds_generally_differ() -> None:

@@ -189,17 +189,17 @@ def test_to_dict_is_json_serializable():
     json.dumps(to_dict(s))
 
 
-def test_public_view_hides_other_players_vp_and_facedown():
+def test_public_view_exposes_all_vp_and_score_and_hides_facedown():
+    from . import scoring
+
     s = _make_state()
     pv = public_view(s, perspective=0)
 
-    # own vp present
-    assert pv["players"][0]["vp_chips"] == s.players[0].vp_chips
-    assert pv["players"][0]["vp_chips"] is not None
-
-    # other players' vp hidden
-    for i in range(1, len(s.players)):
-        assert pv["players"][i]["vp_chips"] is None
+    # VP is public: every player's vp_chips is shown (not None), plus a score.
+    for i, p in enumerate(s.players):
+        assert pv["players"][i]["vp_chips"] == p.vp_chips
+        assert pv["players"][i]["vp_chips"] is not None
+        assert pv["players"][i]["score"] == scoring.final_score(s, i)
 
     # facedown exposed as a count only, no tile list
     assert pv["plantation_facedown_count"] == len(s.plantation_facedown)
