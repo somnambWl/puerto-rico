@@ -26,6 +26,7 @@ from puerto_rico.agents.heuristic_agent import HeuristicAgent
 from puerto_rico.engine.game import Game
 from puerto_rico.engine.state import GameConfig
 
+from .catalog import CATALOG_RESPONSE
 from .schemas import ErrorMsg, NewGameMsg, NewGameResponse, SequenceMsg, StateMsg
 from .session import GameSession
 
@@ -115,6 +116,29 @@ def create_app() -> FastAPI:
     @app.get("/games/{game_id}", response_model=StateMsg)
     def get_game(game_id: str) -> StateMsg:
         return _get_session(game_id).state_view()
+
+    @app.get("/catalog")
+    def get_catalog() -> dict:
+        """Static building catalog + good base values (no game needed)."""
+        return CATALOG_RESPONSE
+
+    @app.post("/games/{game_id}/preview", response_model=StateMsg)
+    def preview_game(game_id: str, body: dict) -> StateMsg:
+        """Apply ``action_id`` to a *clone* and return the hypothetical state.
+
+        The real game is never mutated and no AI is run — this is a what-if frame
+        (``preview=True``) the client diffs against the current state. ``404`` for
+        an unknown game; ``400`` for a missing/non-integer ``action_id`` or an
+        action that is not currently legal.
+        """
+        session = _get_session(game_id)
+        action_id = body.get("action_id") if isinstance(body, dict) else None
+        if action_id is None:
+            raise HTTPException(status_code=400, detail="missing action_id")
+        try:
+            return session.preview_action(int(action_id))
+        except (TypeError, ValueError, KeyError) as exc:
+            raise HTTPException(status_code=400, detail=str(exc))
 
     @app.websocket("/ws/games/{game_id}")
     async def ws_game(websocket: WebSocket, game_id: str) -> None:

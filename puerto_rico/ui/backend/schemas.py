@@ -34,6 +34,12 @@ class StateMsg(BaseModel):
     opponents). ``legal_actions`` is populated only when it is the human's turn
     (empty during AI turns). ``result`` is present only when ``terminal`` is
     true.
+
+    ``preview`` marks a *hypothetical* frame produced by ``POST /games/{id}/
+    preview``: the engine applied a single candidate human action to a throwaway
+    clone (the real game is untouched) so the client can diff the current state
+    against the result before committing. ``preview`` is ``False`` on every
+    normal state frame; preview frames carry an empty ``legal_actions`` list.
     """
 
     view: dict
@@ -42,6 +48,7 @@ class StateMsg(BaseModel):
     to_move_is_human: bool
     terminal: bool
     result: Optional[dict] = None
+    preview: bool = False
 
 
 class ActionMsg(BaseModel):

@@ -92,13 +92,17 @@ class GameSession:
         return out
 
     def _result(self) -> dict | None:
-        """Final-score breakdown when terminal, else ``None``.
+        """Final-score breakdown for the live game when terminal, else ``None``."""
+        return self._result_for(self.game)
+
+    def _result_for(self, game) -> dict | None:
+        """Final-score breakdown when ``game`` is terminal, else ``None``.
 
         Per-player ``final_score`` plus its components (vp chips, building VP,
         large-building bonus) and the overall winner. Mirrors ``scoring.py`` so
-        the game-over screen matches the engine exactly.
+        the game-over screen matches the engine exactly. Works for the live game
+        or a preview clone (used by :meth:`preview_action`).
         """
-        game = self.game
         if not game.is_terminal:
             return None
         state = game.state
@@ -137,6 +141,42 @@ class GameSession:
             to_move_is_human=(game.current_player == self.human_seat),
             terminal=game.is_terminal,
             result=self._result(),
+        )
+
+    def preview_action(self, action_id: int) -> StateMsg:
+        """A hypothetical :class:`StateMsg`: ``action_id`` applied to a *clone*.
+
+        Validates ``action_id`` against the current legal set (raising
+        ``ValueError`` if it is not legal right now), clones the authoritative
+        game, applies the single decoded human action to the clone, and returns a
+        :class:`StateMsg` built from the **clone's** ``public_view`` — leaving
+        ``self.game`` completely untouched. No AI is run; only the one human
+        action is applied. The returned frame has ``preview=True`` and an empty
+        ``legal_actions`` list (it is a what-if, not a turn).
+        """
+        game = self.game
+        if game.is_terminal:
+            raise ValueError("game is already over")
+        if game.current_player != self.human_seat:
+            raise ValueError("not the human's turn")
+        if action_id not in self.legal_action_ids():
+            raise ValueError(f"action {action_id} is not currently legal")
+
+        clone = game.clone()
+        action = action_codec.from_int(action_id, clone.state)
+        clone.apply(action, validate=False)
+
+        result = None
+        if clone.is_terminal:
+            result = self._result_for(clone)
+        return StateMsg(
+            view=_jsonable(clone.public_view(perspective=self.human_seat)),
+            legal_actions=[],
+            to_move=clone.current_player,
+            to_move_is_human=(clone.current_player == self.human_seat),
+            terminal=clone.is_terminal,
+            result=result,
+            preview=True,
         )
 
     # ------------------------------------------------------------------ #

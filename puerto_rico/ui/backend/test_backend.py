@@ -236,3 +236,140 @@ def test_rl_checkpoint_presence_note() -> None:
     # Informational: the release checkpoint is expected at this path.
     # The fallback test above covers the missing-checkpoint case implicitly.
     _ = Path(DEFAULT_RL_CHECKPOINT)
+
+
+# --------------------------------------------------------------------------- #
+# preview                                                                      #
+# --------------------------------------------------------------------------- #
+
+
+def test_preview_reflects_action_without_mutating_real_game(client: TestClient) -> None:
+    data = _new_game(client)
+    gid = data["game_id"]
+
+    # Capture the real pre-preview state.
+    before = client.get(f"/games/{gid}").json()
+    assert before["to_move_is_human"] is True
+    legal_ids = [a["id"] for a in before["legal_actions"]]
+    assert legal_ids
+
+    # Preview the opening role selection: the result is a hypothetical frame.
+    action_id = legal_ids[0]
+    resp = client.post(f"/games/{gid}/preview", json={"action_id": action_id})
+    assert resp.status_code == 200, resp.text
+    preview = resp.json()
+    assert preview["preview"] is True
+    # Preview frames carry no actions (it is a what-if, not the human's turn).
+    assert preview["legal_actions"] == []
+    # The action took effect on the clone: the engine advanced past role
+    # selection, so the hypothetical view differs from the current one.
+    assert preview["view"] != before["view"]
+
+    # CRUCIAL: the real game is unchanged after a preview.
+    after = client.get(f"/games/{gid}").json()
+    assert after["to_move"] == before["to_move"]
+    assert after["to_move_is_human"] is True
+    assert after["view"] == before["view"]
+    assert [a["id"] for a in after["legal_actions"]] == legal_ids
+
+
+def test_preview_build_reflects_built_building(client: TestClient) -> None:
+    # Drive the game (server-side session) until the human can BUILD, then
+    # preview the build and confirm the building appears in the hypothetical view
+    # while the real game still offers the same build action.
+    from puerto_rico.engine.state import GameConfig
+    from puerto_rico.engine.game import Game
+    from puerto_rico.agents.heuristic_agent import HeuristicAgent
+    from puerto_rico.ui.backend.session import GameSession
+    from puerto_rico.env import action_codec
+
+    session = GameSession(Game(GameConfig(num_players=4, seed=7)), human_seat=0, ai=HeuristicAgent())
+    session.run_ai_until_human()
+
+    # Step until the human faces a BUILD decision (bounded).
+    build_id = None
+    for _ in range(500):
+        if session.game.is_terminal:
+            break
+        builds = [
+            a
+            for a in session.game.legal_actions()
+            if a.type.name == "BUILD"
+        ]
+        if builds and session.game.current_player == 0:
+            build_id = action_codec.to_int(builds[0])
+            break
+        # Take the first legal human action to advance.
+        first = session.game.legal_actions()[0]
+        session.human_step(action_codec.to_int(first))
+    assert build_id is not None, "no BUILD decision reached for the human"
+
+    before = session.state_view()
+    preview = session.preview_action(build_id)
+    assert preview.preview is True
+    # The real game is untouched: same to_move and same legal set.
+    after = session.state_view()
+    assert after.to_move == before.to_move
+    assert [a.id for a in after.legal_actions] == [a.id for a in before.legal_actions]
+
+
+def test_preview_illegal_and_missing_action(client: TestClient) -> None:
+    data = _new_game(client)
+    gid = data["game_id"]
+
+    legal_ids = {a["id"] for a in client.get(f"/games/{gid}").json()["legal_actions"]}
+    illegal = next(i for i in range(82) if i not in legal_ids)
+
+    r_illegal = client.post(f"/games/{gid}/preview", json={"action_id": illegal})
+    assert r_illegal.status_code == 400
+
+    r_missing = client.post(f"/games/{gid}/preview", json={})
+    assert r_missing.status_code == 400
+
+    r_unknown = client.post("/games/nope/preview", json={"action_id": 0})
+    assert r_unknown.status_code == 404
+
+
+# --------------------------------------------------------------------------- #
+# catalog                                                                      #
+# --------------------------------------------------------------------------- #
+
+
+def test_catalog_lists_all_buildings_and_goods(client: TestClient) -> None:
+    resp = client.get("/catalog")
+    assert resp.status_code == 200, resp.text
+    data = resp.json()
+
+    buildings = data["buildings"]
+    assert len(buildings) == 23
+    by_id = {b["id"]: b for b in buildings}
+    for b in buildings:
+        assert b["description"] and isinstance(b["description"], str)
+        assert b["kind"] in {"production", "small", "large"}
+        assert isinstance(b["cost"], int)
+        assert isinstance(b["vp"], int)
+
+    # Spot-check a few specs against the engine catalog.
+    coffee = by_id[BuildingId.COFFEE_ROASTER]
+    assert coffee["cost"] == 6 and coffee["vp"] == 3
+    assert coffee["kind"] == "production" and coffee["produces"] == "Coffee"
+
+    guild = by_id[BuildingId.GUILD_HALL]
+    assert guild["cost"] == 10 and guild["vp"] == 4 and guild["kind"] == "large"
+    assert "production" in guild["description"]
+
+    market = by_id[BuildingId.SMALL_MARKET]
+    assert market["kind"] == "small" and "doubloon" in market["description"]
+
+    goods = data["goods"]
+    assert len(goods) == 5
+    base = {g["name"]: g["base_value"] for g in goods}
+    assert base == {"Corn": 0, "Indigo": 1, "Sugar": 2, "Tobacco": 3, "Coffee": 4}
+
+
+def test_state_msg_preview_defaults_false(client: TestClient) -> None:
+    # Normal frames are unaffected by the new preview field.
+    data = _new_game(client)
+    assert data["state"]["preview"] is False
+    state = client.get(f"/games/{data['game_id']}").json()
+    assert state["preview"] is False
