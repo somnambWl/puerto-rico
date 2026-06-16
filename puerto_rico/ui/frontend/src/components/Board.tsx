@@ -174,13 +174,13 @@ export function Board({
         </div>
       </section>
 
-      <div className="board-grid board-grid-2">
-        {/* Ships */}
-        <section className="board-section">
-          <h3>Ships</h3>
-          <div className="ship colonist-ship">
-            <span className="ship-label">Colonist ship</span>
-            <span className="ship-fill">{view.colonist_ship} colonists</span>
+      {/* Ships — compact horizontal row (colonist + cargo ships) */}
+      <section className="board-section">
+        <h3>Ships</h3>
+        <div className="ship-row">
+          <div className="ship ship-card colonist-ship">
+            <span className="ship-label">Colonist</span>
+            <span className="ship-fill">{view.colonist_ship}</span>
           </div>
           {view.cargo_ships.map((s, i) => {
             // index < 0 is a generic "all cargo ships" highlight (LOAD labels
@@ -197,7 +197,7 @@ export function Board({
               <div
                 key={i}
                 className={
-                  "ship cargo-ship" +
+                  "ship ship-card cargo-ship" +
                   (clickable ? " board-clickable" : "") +
                   hlClass(hl, highlight?.ghost)
                 }
@@ -207,8 +207,9 @@ export function Board({
                 }
                 onMouseLeave={clickable ? () => onBoardHover?.(null) : undefined}
               >
-                <span className="ship-label">Ship {i + 1}</span>
-                <span className="ship-cap">cap {s.capacity}</span>
+                <span className="ship-label">
+                  Ship {i + 1} <span className="ship-cap">cap {s.capacity}</span>
+                </span>
                 <span className="ship-fill">
                   <span
                     className="good-dot"
@@ -221,50 +222,49 @@ export function Board({
               </div>
             );
           })}
-        </section>
+        </div>
+      </section>
 
-        {/* Trading house */}
-        <section className="board-section">
-          <h3>Trading house</h3>
-          <div className="trading-house">
-            {view.trading_house.length === 0 && (
-              <span className="muted">empty</span>
-            )}
-            {view.trading_house.map((g, i) => {
-              const gi = goodInfo(g);
-              const hl =
-                highlight && highlight.kind === "good" && highlight.good === g;
-              return (
+      {/* Trading house — compact: chips and base-value legend in a row */}
+      <section className="board-section">
+        <h3>Trading house</h3>
+        <div className="trading-house">
+          {view.trading_house.length === 0 && (
+            <span className="muted">empty</span>
+          )}
+          {view.trading_house.map((g, i) => {
+            const gi = goodInfo(g);
+            const hl =
+              highlight && highlight.kind === "good" && highlight.good === g;
+            return (
+              <span
+                key={i}
+                className={"good-chip" + hlClass(hl, highlight?.ghost)}
+                style={{ background: GOOD_COLORS[g] }}
+                title={`${gi.name}: base ${gi.base_value}`}
+              >
+                {gi.name} <strong>${gi.base_value}</strong>
+              </span>
+            );
+          })}
+        </div>
+        {/* Always-visible base-value legend. */}
+        <div className="goods-legend">
+          <span className="goods-legend-label">base values:</span>
+          {view.goods_supply.map((_, g) => {
+            const gi = goodInfo(g);
+            return (
+              <span key={g} className="goods-legend-item" title={gi.name}>
                 <span
-                  key={i}
-                  className={"good-chip" + hlClass(hl, highlight?.ghost)}
+                  className="good-dot"
                   style={{ background: GOOD_COLORS[g] }}
-                  title={`${gi.name}: base ${gi.base_value}`}
-                >
-                  {gi.name} <strong>${gi.base_value}</strong>
-                </span>
-              );
-            })}
-          </div>
-          {/* Always-visible base-value legend. */}
-          <div className="goods-legend">
-            <span className="goods-legend-label">base values:</span>
-            {view.goods_supply.map((_, g) => {
-              const gi = goodInfo(g);
-              return (
-                <span key={g} className="goods-legend-item" title={gi.name}>
-                  <span
-                    className="good-dot"
-                    style={{ background: GOOD_COLORS[g] }}
-                  />
-                  {gi.name} ${gi.base_value}
-                </span>
-              );
-            })}
-          </div>
-        </section>
-
-      </div>
+                />
+                {gi.name} ${gi.base_value}
+              </span>
+            );
+          })}
+        </div>
+      </section>
 
       {/* Face-up plantation row (+ quarry take) */}
       <section className="board-section">

@@ -287,7 +287,13 @@ button {
   color: var(--muted);
 }
 
-/* ships */
+/* ships — compact cards laid out in a horizontal wrapping row */
+.ship-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: stretch;
+}
 .ship {
   display: flex;
   flex-direction: column;
@@ -296,25 +302,45 @@ button {
   background: var(--panel-2);
   border: 1px solid var(--line);
   border-radius: 6px;
-  margin-bottom: 6px;
+}
+.ship-card {
+  min-width: 110px;
+  margin-bottom: 0;
+  justify-content: center;
+}
+.colonist-ship {
+  min-width: 84px;
 }
 .ship-label {
   font-weight: 600;
+  font-size: 13px;
+  white-space: nowrap;
+}
+.ship-cap {
+  font-weight: 400;
+  color: var(--muted);
 }
 .ship-cap,
 .ship-fill {
   font-size: 12px;
   color: var(--muted);
 }
+.ship-fill {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  white-space: nowrap;
+}
 
 /* trading house + supplies */
-/* Vertical stack: a narrow column of good chips instead of a wide row, so the
-   trading house reads as a tight panel and frees horizontal space. */
+/* Horizontal wrapping row of good chips so the trading house stays a short,
+   full-width strip (no tall narrow column leaving empty space beside it). */
 .trading-house {
   display: flex;
-  flex-direction: column;
-  align-items: flex-start;
-  gap: 4px;
+  flex-direction: row;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
 }
 .good-chip {
   padding: 2px 8px;
@@ -956,12 +982,13 @@ button {
 .good-chip strong {
   font-weight: 800;
 }
-/* Tight stacked list under the chips so the trading house stays a narrow panel. */
+/* Inline wrapping legend under the chips so the trading house stays short. */
 .goods-legend {
   display: flex;
-  flex-direction: column;
-  align-items: flex-start;
-  gap: 2px;
+  flex-direction: row;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 12px;
   margin-top: 6px;
   font-size: 11px;
   color: var(--muted);
