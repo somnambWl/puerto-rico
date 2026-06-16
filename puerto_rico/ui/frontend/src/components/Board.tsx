@@ -89,11 +89,11 @@ export function Board({
     if (id != null && onBoardAction) onBoardAction(id);
   };
 
-  // Group the available buildings by VP, sorted by cost ascending within a row.
+  // Group ALL buildings by VP, sorted by cost ascending within a row. Sold-out
+  // buildings (n == 0) are kept in place (rendered faded) rather than removed.
   const vpRows = useMemo(() => {
     const rows = new Map<number, { id: number; n: number; cost: number; large: boolean }[]>();
     for (const [idStr, n] of Object.entries(view.buildings_supply)) {
-      if (n <= 0) continue;
       const id = Number(idStr);
       const meta = buildingInfo(id);
       const vp = meta?.vp ?? 0;
@@ -335,12 +335,13 @@ export function Board({
                 {items.map(({ id, n, large }) => {
                   const meta = buildingInfo(id);
                   const max = meta?.supply ?? n;
+                  const soldOut = n <= 0;
                   const hl =
                     highlight &&
                     highlight.kind === "building" &&
                     highlight.buildingId === id;
                   const buildId = actionFor({ type: "build", building: id });
-                  const clickable = buildId != null;
+                  const clickable = buildId != null && !soldOut;
                   const accent = buildingColor(meta?.produces, large);
                   return (
                     <InfoTooltip
@@ -367,6 +368,7 @@ export function Board({
                         className={
                           "shelf-building" +
                           (large ? " shelf-large" : "") +
+                          (soldOut ? " shelf-soldout" : "") +
                           (clickable ? " board-clickable" : "") +
                           hlClass(hl, highlight?.ghost)
                         }
