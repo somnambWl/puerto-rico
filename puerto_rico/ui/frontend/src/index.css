@@ -519,6 +519,9 @@ button {
   display: grid;
   grid-template-columns: repeat(6, 1fr);
   gap: 3px;
+  /* Dense packing so a 2-wide large building at a row's end doesn't orphan a
+     cell and push slots onto an extra row — trailing empty cells backfill the gap. */
+  grid-auto-flow: row dense;
 }
 /* Opponent (compact) boards: keep them smaller than the human's but readable.
    6-column grids (like the human) instead of cramped 12-column. */
