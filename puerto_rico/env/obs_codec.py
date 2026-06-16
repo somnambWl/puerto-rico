@@ -82,7 +82,7 @@ _MAX_FACEUP_OF_KIND = 6.0  # face-up plantation row is small.
 _MAX_FACEDOWN = 50.0  # full plantation deck size.
 _MAX_QUARRY_SUPPLY = 8.0
 _MAX_VP_REMAINING = 100.0  # 4p VP pool.
-_MAX_BUILDING_SUPPLY = 2.0  # production buildings have 2 copies, beige have 1.
+_MAX_BUILDING_SUPPLY = 4.0  # max copies in 4p: production small indigo/sugar = 4, others <=3, beige small 2 / large 1.
 
 _MAX_COLONISTS_TO_PLACE = 12.0  # mayor placement scratch.
 # Cap for seat-relative *indices* (order_pos, current_player_rel). These range
