@@ -98,13 +98,12 @@ export function PlayerBoard({
           )}
           {active && <span className="tomove-badge">to move</span>}
         </span>
-        <span className="player-vp">
-          <span className="vp-chips" title="VP chips earned">
-            {playerView.vp_chips ?? 0} chips
-          </span>
-          <span className="vp-total" title="Total VP if game ended now">
-            {playerView.score} total
-          </span>
+        <span
+          className="player-vp"
+          title={`Total ${playerView.score} = ${playerView.vp_chips ?? 0} VP chips + ${(playerView.score ?? 0) - (playerView.vp_chips ?? 0)} from buildings (if the game ended now)`}
+        >
+          <span className="vp-chips">{playerView.vp_chips ?? 0} chips</span>
+          <span className="vp-total">{playerView.score} total</span>
         </span>
       </div>
 

@@ -21,6 +21,8 @@ export function Standings({ view, playerNames, humanSeat }: StandingsProps) {
       seat,
       name: playerNames[seat] ?? `P${seat}`,
       score: p.score,
+      chips: p.vp_chips ?? 0,
+      buildingVp: (p.score ?? 0) - (p.vp_chips ?? 0),
       doubloons: p.doubloons,
     }))
     .sort((a, b) => b.score - a.score);
@@ -48,7 +50,10 @@ export function Standings({ view, playerNames, humanSeat }: StandingsProps) {
                     <span className="standings-you-tag">You</span>
                   )}
                 </td>
-                <td className="standings-score" title="Victory points">
+                <td
+                  className="standings-score"
+                  title={`Total ${r.score} = ${r.chips} VP chips + ${r.buildingVp} from buildings`}
+                >
                   {r.score} VP
                 </td>
                 <td className="standings-db" title="Doubloons">
