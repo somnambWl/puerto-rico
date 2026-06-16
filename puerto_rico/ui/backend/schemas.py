@@ -99,6 +99,20 @@ class ActionMsg(BaseModel):
     action_id: int
 
 
+class ActionBatchMsg(BaseModel):
+    """Client -> server: an ordered batch of action ids applied as one step.
+
+    Used for the human's Mayor placement: the human arranges every colonist in
+    one editor and submits the whole sequence (N placements + a final store) at
+    once. The session applies each id in order, validating each against the
+    legal set *at that point* (no AI runs between them — they are the human's
+    consecutive placements), then runs the AI to the next human turn. The
+    response is a :class:`SequenceMsg` with one frame per applied action.
+    """
+
+    action_ids: list[int]
+
+
 class SequenceMsg(BaseModel):
     """Server -> client: the ordered states produced by one human action plus
     every AI response that followed, so the frontend can animate the turn."""

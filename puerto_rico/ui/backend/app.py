@@ -167,17 +167,32 @@ def create_app() -> FastAPI:
         try:
             while True:
                 msg = await websocket.receive_json()
-                action_id = msg.get("action_id") if isinstance(msg, dict) else None
-                if action_id is None:
-                    await websocket.send_json(
-                        ErrorMsg(message="missing action_id").model_dump()
-                    )
-                    continue
+                msg = msg if isinstance(msg, dict) else {}
+                # Two accepted shapes (back-compat): a single {action_id} or a
+                # batch {action_ids: [...]} applied in order (the human's whole
+                # Mayor arrangement in one round-trip). A message carrying both
+                # prefers the batch.
+                action_ids = msg.get("action_ids")
+                action_id = msg.get("action_id")
                 try:
-                    states = session.human_step(int(action_id))
-                except (ValueError, KeyError) as exc:
-                    # Invalid / illegal action: report, keep the socket open,
-                    # do not mutate the game.
+                    if action_ids is not None:
+                        states = session.human_steps(
+                            [int(a) for a in action_ids]
+                        )
+                    elif action_id is not None:
+                        states = session.human_step(int(action_id))
+                    else:
+                        await websocket.send_json(
+                            ErrorMsg(
+                                message="missing action_id / action_ids"
+                            ).model_dump()
+                        )
+                        continue
+                except (ValueError, KeyError, TypeError) as exc:
+                    # Invalid / illegal action: report, keep the socket open. A
+                    # batch may have partially applied before the bad id; the
+                    # session is still consistent (engine-validated) and the next
+                    # frame the client requests reflects the real state.
                     await websocket.send_json(
                         ErrorMsg(message=str(exc)).model_dump()
                     )

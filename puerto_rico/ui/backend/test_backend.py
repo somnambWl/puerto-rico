@@ -71,6 +71,14 @@ def test_label_action_covers_each_decision_type() -> None:
     assert "Tobacco" in ship_label
     assert labels.label_action_kind(Action.load(Good.TOBACCO)) == "ship"
 
+    # A cargo LOAD that targets a specific ship disambiguates which ship by its
+    # capacity and current fill (two LOAD options otherwise read identically).
+    ship0 = game.state.cargo_ships[0]
+    targeted_label = labels.label_action(Action.load(Good.TOBACCO, target=0), game)
+    assert "Tobacco" in targeted_label
+    assert f"{ship0.capacity}-space ship" in targeted_label
+    assert f"({ship0.count}/{ship0.capacity})" in targeted_label
+
     wharf_label = labels.label_action(
         Action(DecisionType.LOAD, good=Good.SUGAR, choice=1), game
     )
@@ -494,3 +502,161 @@ def test_state_msg_preview_defaults_false(client: TestClient) -> None:
     assert data["state"]["preview"] is False
     state = client.get(f"/games/{data['game_id']}").json()
     assert state["preview"] is False
+
+
+# --------------------------------------------------------------------------- #
+# batch placement (human_steps) + AI frame collapsing                          #
+# --------------------------------------------------------------------------- #
+
+
+def _drive_to_human_mayor(session, max_steps: int = 1000):
+    """Advance a session until the human faces a PLACE_COLONIST decision.
+
+    Returns True when reached, taking the first legal human action at every
+    other human decision. Used by the batch / collapsing tests.
+    """
+    from puerto_rico.env import action_codec
+
+    session.run_ai_until_human()
+    for _ in range(max_steps):
+        if session.game.is_terminal:
+            return False
+        if session.game.current_player != 0:
+            session.run_ai_until_human()
+            continue
+        legal = session.game.legal_actions()
+        if any(a.type.name == "PLACE_COLONIST" for a in legal):
+            return True
+        session.human_step(action_codec.to_int(legal[0]))
+    return False
+
+
+def _make_session(seed: int = 7):
+    from puerto_rico.agents.heuristic_agent import HeuristicAgent
+    from puerto_rico.engine.game import Game
+    from puerto_rico.engine.state import GameConfig
+    from puerto_rico.ui.backend.session import GameSession
+
+    return GameSession(
+        Game(GameConfig(num_players=4, seed=seed)), human_seat=0, ai=HeuristicAgent()
+    )
+
+
+def test_human_steps_applies_batch_then_runs_ai() -> None:
+    # human_steps applies a sequence of the human's placements in order (no AI
+    # between them) and then runs the AI to the next human turn.
+    from puerto_rico.env import action_codec
+
+    session = _make_session(seed=7)
+    assert _drive_to_human_mayor(session), "never reached human Mayor placement"
+
+    # Build a batch: place onto every currently-empty circle (in legal order),
+    # then a final store. The engine lifted everything, so each target is legal
+    # in turn until filled.
+    placements = [
+        a
+        for a in session.game.legal_actions()
+        if a.type.name == "PLACE_COLONIST" and a.target != -1
+    ]
+    n_stored = session.game.state.players[0].stored_colonists
+    batch_actions = placements[:n_stored] + [Action.place_colonist(-1)]
+    batch_ids = [action_codec.to_int(a) for a in batch_actions]
+
+    states = session.human_steps(batch_ids)
+    # One frame per applied placement/store, plus the AI frames that followed.
+    assert len(states) >= len(batch_ids)
+    # After the batch it is no longer the human's mayor placement (we stored).
+    # The human's placements landed: stored_colonists dropped to 0 or the player
+    # ran out of circles.
+    placed = min(n_stored, len(placements))
+    assert placed >= 1
+
+
+def test_human_steps_rejects_illegal_id_in_batch() -> None:
+    session = _make_session(seed=7)
+    assert _drive_to_human_mayor(session)
+    legal = session.legal_action_ids()
+    illegal = next(i for i in range(200) if i not in legal)
+    # An id that is illegal while it is still the human's turn raises.
+    with pytest.raises(ValueError):
+        session.human_steps([illegal])
+
+
+def test_human_steps_rejects_empty_and_non_human_turn() -> None:
+    session = _make_session(seed=7)
+    session.run_ai_until_human()
+    with pytest.raises(ValueError):
+        session.human_steps([])
+
+
+def test_ws_accepts_batch_message() -> None:
+    # The WS handler accepts {action_ids:[...]} and returns a sequence frame.
+    from puerto_rico.env import action_codec
+
+    app = create_app()
+    client = TestClient(app)
+    data = _new_game(client, seed=7)
+    gid = data["game_id"]
+    session = app.state.sessions[gid]
+
+    assert _drive_to_human_mayor(session), "never reached human Mayor placement"
+
+    placements = [
+        a
+        for a in session.game.legal_actions()
+        if a.type.name == "PLACE_COLONIST" and a.target != -1
+    ]
+    n_stored = session.game.state.players[0].stored_colonists
+    batch_actions = placements[:n_stored] + [Action.place_colonist(-1)]
+    batch_ids = [action_codec.to_int(a) for a in batch_actions]
+
+    with client.websocket_connect(f"/ws/games/{gid}") as ws:
+        first = ws.receive_json()
+        assert first["type"] == "state"
+        ws.send_json({"action_ids": batch_ids})
+        seq = ws.receive_json()
+        assert seq["type"] == "sequence"
+        assert len(seq["states"]) >= 1
+        for _ in seq["states"]:
+            frame = ws.receive_json()
+            assert frame["type"] == "state"
+
+
+def test_ai_mayor_placement_collapses_to_single_frame() -> None:
+    # When an AI seat places multiple colonists in its Mayor turn, the session
+    # emits ONE collapsed frame for that run, not one frame per colonist. The AI
+    # auto-runs *inside* human_step, so we inspect the frames it returns.
+    import random
+
+    from puerto_rico.env import action_codec
+
+    session = _make_session(seed=7)
+    session.run_ai_until_human()
+    rng = random.Random(7)
+
+    saw_collapsed = False
+    for _ in range(4000):
+        if session.game.is_terminal:
+            break
+        assert session.game.current_player == 0  # human turn (AI ran already)
+        legal = session.game.legal_actions()
+        frames = session.human_step(action_codec.to_int(rng.choice(legal)))
+
+        # No two ADJACENT frames may be a per-colonist placement by the same
+        # seat: collapsing means a seat's whole mayor run is one frame.
+        prev_seat = None
+        prev_was_place = False
+        for f in frames:
+            lab = f.last_action_label or ""
+            is_place = "placed" in lab and "colonist" in lab
+            if is_place:
+                saw_collapsed = True
+            if is_place and prev_was_place and f.last_action_seat == prev_seat:
+                raise AssertionError(
+                    "two adjacent placement frames for the same AI seat — "
+                    "collapsing failed"
+                )
+            prev_seat = f.last_action_seat
+            prev_was_place = is_place
+
+    assert saw_collapsed, "never observed an AI mayor placement frame"
