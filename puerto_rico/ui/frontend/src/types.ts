@@ -286,8 +286,10 @@ export function buildingColor(
   isLarge: boolean | undefined,
 ): string {
   if (isLarge) return BUILDING_LARGE;
-  if (produces && PRODUCE_COLOR[produces] !== undefined) {
-    return PRODUCE_COLOR[produces];
+  // /catalog returns capitalized good names ("Indigo"); PRODUCE_COLOR keys are lowercase.
+  const key = produces?.toLowerCase();
+  if (key && PRODUCE_COLOR[key] !== undefined) {
+    return PRODUCE_COLOR[key];
   }
   return BUILDING_VIOLET;
 }
