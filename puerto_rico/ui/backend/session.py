@@ -365,7 +365,11 @@ class GameSession:
         if not action_ids:
             raise ValueError("empty action batch")
 
-        states: list[StateMsg] = []
+        # Apply the whole batch but capture ONLY the final state (not one frame
+        # per placement) so the client shows the confirmed arrangement at once
+        # instead of animating each colonist lift+place.
+        seat = game.current_player
+        applied = 0
         for action_id in action_ids:
             if game.is_terminal or game.current_player != self.human_seat:
                 # The human's turn ended mid-batch (e.g. the last colonist was
@@ -377,9 +381,12 @@ class GameSession:
                     f"action {action_id} is not currently legal"
                 )
             action = action_codec.from_int(action_id, game.state)
-            seat = game.current_player
-            label = labels.label_action(action, game)
             game.apply(action)
+            applied += 1
+
+        states: list[StateMsg] = []
+        if applied:
+            label = f"placed {applied} colonist{'s' if applied != 1 else ''}"
             states.append(
                 self.state_view(last_action_label=label, last_action_seat=seat)
             )
