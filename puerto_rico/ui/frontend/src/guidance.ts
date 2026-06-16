@@ -44,6 +44,11 @@ export function guidanceFor(
     return "Ship goods for victory points — click a cargo ship, or use your wharf. You must ship if able.";
   }
   if (kinds.has("choose")) {
+    // CHOOSE(good) is emitted by two phases: craftsman (take an extra good) and
+    // captain end-of-phase (which good to keep on the windrose; the rest are discarded).
+    if (PHASE_NAMES[view.phase] === "Captain") {
+      return "Choose which good to keep — the rest of your goods are discarded.";
+    }
     return "Pick the extra good you want to take, or pass.";
   }
   if (onlyPass) {

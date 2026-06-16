@@ -28,6 +28,7 @@ from puerto_rico.engine.enums import (
     BuildingId,
     DecisionType,
     Good,
+    Phase,
     Role,
     TileType,
 )
@@ -199,8 +200,11 @@ def label_action(action: Action, game) -> str:
         return f"Ship {good_name}{ship_desc}"
 
     if t == DecisionType.CHOOSE:
-        # The only CHOOSE the engine emits is the craftsman extra-good pick.
+        # CHOOSE(good) is emitted by TWO phases: the craftsman extra-good pick
+        # and the captain windrose "which good to keep" (the rest are discarded).
         if action.good is not None:
+            if game.state.phase == Phase.CAPTAIN:
+                return f"Keep {_good_name(action.good)} (discard the other goods)"
             return f"Take extra {_good_name(action.good)}"
         return f"Choose option {action.choice}"
 
