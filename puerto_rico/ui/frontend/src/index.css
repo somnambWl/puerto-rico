@@ -548,25 +548,27 @@ button {
 .island-grid,
 .city-grid {
   display: grid;
-  /* Human board: 4 columns → 3 rows of 4 slots. A 2-wide large building spans
-     2 of the 4 columns and `row dense` backfills any gap it would leave. */
-  grid-template-columns: repeat(4, 1fr);
+  /* Human board: tiles auto-fill the full left-column width — as many ~120px
+     slots per row as fit (6+ on a wide ~2000px screen, 4 on narrow). A 2-wide
+     large building spans 2 columns and `row dense` backfills any gap it leaves. */
+  grid-template-columns: repeat(auto-fill, minmax(120px, 1fr));
   gap: 3px;
   /* Dense packing so a 2-wide large building at a row's end doesn't orphan a
      cell and push slots onto an extra row — trailing empty cells backfill the gap. */
   grid-auto-flow: row dense;
 }
-/* The human board doesn't need full width: cap it so the freed horizontal
-   space is real (reclaimed by the wider opponent column) and the 4-col grid
-   reads as compact rather than stretched. */
+/* The human board now fills the full left-column width (no cap), so there is no
+   empty area to its right on wide screens. */
 .player-human {
-  max-width: 560px;
+  width: 100%;
 }
-/* Opponent (compact) boards: keep them smaller than the human's but readable.
-   6-column grids instead of cramped 12-column. */
+/* Opponent (compact) boards: dense auto-fill grids so slots are sized to their
+   content rather than stretched into wide mostly-empty cells. Many small tiles
+   pack per row in the ~600px side column, keeping each opponent board compact
+   and information-dense. */
 .player-compact .island-grid,
 .player-compact .city-grid {
-  grid-template-columns: repeat(6, 1fr);
+  grid-template-columns: repeat(auto-fill, minmax(88px, 1fr));
 }
 
 .island-slot,
@@ -600,10 +602,11 @@ button {
   text-align: center;
   line-height: 1.1;
 }
-/* With the wider right column, opponent slots can be bigger and more legible. */
+/* Opponent slots are shorter than the human's so each compact board stays tight
+   and information-dense; still tall enough to read a name + a colonist dot. */
 .player-compact .island-slot,
 .player-compact .city-slot {
-  min-height: 42px;
+  min-height: 34px;
   font-size: 11px;
 }
 
@@ -1027,13 +1030,15 @@ button {
   border-radius: 6px;
   font-size: 12px;
 }
-/* Uniform-width tiles in a fixed 3-column grid: a 6-building VP group wraps as
-   two even rows of 3 (a 5-building group as 3+2), narrowing the shelf and
-   removing the orphan a wider auto-fill left behind. */
+/* Uniform-width tiles that fill the available left-column width: auto-fill packs
+   as many ~160px tiles per row as fit (6-7 on a wide ~2000px screen, fewer on
+   narrow ones), and minmax(...,1fr) stretches them to consume the full width so
+   there is no empty void to the right. A 6-building VP group fits one row on a
+   wide screen, avoiding the orphan-row problem. */
 .vp-row-buildings {
-  flex: 0 1 auto;
+  flex: 1 1 auto;
   display: grid;
-  grid-template-columns: repeat(3, 160px);
+  grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
   gap: 6px;
 }
 /* The colored left accent on shelf tiles / city slots is applied inline
