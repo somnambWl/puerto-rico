@@ -133,6 +133,12 @@ class PPOConfig:
     entropy_coef_final: float = 0.0
     entropy_anneal_iters: int = 0  # 0 -> no decay (constant entropy_coef)
 
+    # dense building-development shaping (reward_config.building_development_score),
+    # linearly annealed coef0 -> 0 over shaping_anneal_iters. Default 0 disables it
+    # entirely (byte-identical to no shaping), so existing configs are unchanged.
+    shaping_coef0: float = 0.0
+    shaping_anneal_iters: int = 0  # 0 -> constant shaping_coef0 (no decay)
+
     # model
     hidden: tuple[int, ...] = (256, 256)
 
@@ -179,6 +185,21 @@ def entropy_coef_at(cfg: PPOConfig, iteration: int) -> float:
         return cfg.entropy_coef
     frac = min(1.0, max(0.0, iteration / cfg.entropy_anneal_iters))
     return cfg.entropy_coef + frac * (cfg.entropy_coef_final - cfg.entropy_coef)
+
+
+def shaping_coef_at(cfg: PPOConfig, iteration: int) -> float:
+    """Linearly anneal the dense-shaping coef ``shaping_coef0`` -> 0.
+
+    Mirrors :func:`entropy_coef_at`. ``iteration`` is 0-based. With
+    ``shaping_anneal_iters <= 0`` the coefficient is constant ``shaping_coef0``
+    (so 0 stays 0). Otherwise it decays linearly from ``shaping_coef0`` at
+    iteration 0 to ``0`` at ``shaping_anneal_iters`` and stays 0 thereafter, so
+    the final iterations train on the pure terminal objective (design/05).
+    """
+    if cfg.shaping_anneal_iters <= 0:
+        return cfg.shaping_coef0
+    frac = min(1.0, max(0.0, iteration / cfg.shaping_anneal_iters))
+    return cfg.shaping_coef0 * (1.0 - frac)
 
 
 # --------------------------------------------------------------------------- #
@@ -465,6 +486,7 @@ def train(cfg: PPOConfig) -> str:
         t0 = time.time()
         opp = _opponent_assignment(cfg, pool, policy, rng)
 
+        sc = shaping_coef_at(cfg, it)
         policy.train()
         batch = collect_rollouts(
             policy,
@@ -474,6 +496,7 @@ def train(cfg: PPOConfig) -> str:
             gamma=cfg.gamma,
             gae_lambda=cfg.gae_lambda,
             reward_mode=cfg.reward_mode,
+            shaping_coef=sc,
             device=cfg.device,
             rng_seed=cfg.seed + it,
         )
@@ -518,7 +541,7 @@ def train(cfg: PPOConfig) -> str:
             f"r1st={top_reward:+.2f} | "
             f"pi={metrics['policy_loss']:+.3f} v={metrics['value_loss']:.3f} "
             f"H={metrics['entropy']:.3f} kl={metrics['approx_kl']:.4f} "
-            f"clip={metrics['clip_frac']:.2f} ec={ec:.4f} | "
+            f"clip={metrics['clip_frac']:.2f} ec={ec:.4f} sc={sc:.4f} | "
             f"wr_rand={wr_r} wr_heur={wr_h} mv={info['mask_violations']} "
             f"({dt:.1f}s)",
             flush=True,

@@ -175,3 +175,30 @@ def round_shaping(
         return 0.0
     delta = _vp_advantage(new_state, player_idx) - _vp_advantage(prev_state, player_idx)
     return coef * delta
+
+
+def building_development_score(state: GameState, seat: int) -> float:
+    """Building-derived VP potential for ``seat`` (the "engine" signal).
+
+    Defined as the player's final score MINUS its VP chips::
+
+        building_development_score = scoring.final_score(state, seat) - vp_chips
+                                   = printed building VP + occupied large bonuses
+
+    This is exactly the VP a player earns from *acquiring AND manning* buildings
+    (especially the large buildings, whose SCORE_END bonus only counts when
+    occupied) — the engine the pure-corn-shipping rush skips entirely. It rises
+    when the player buys a (scoring) building and rises further when a large
+    building's slots are occupied at game end.
+
+    Used as a **potential-based-ish dense shaping signal** by the rollout
+    collector: the per-decision change ``Δ building_development_score`` is scaled
+    by an annealed coefficient and added to that step's reward before GAE. Like
+    all shaping here it MUST anneal to 0 by the end of training so the final
+    policy is fine-tuned purely on the standing-based terminal objective
+    (design/05). It is measured at the acting seat's decision points, so it acts
+    as a difference-of-potentials nudge rather than a permanent reward bias.
+    """
+    return float(scoring.final_score(state, seat)) - float(
+        state.players[seat].vp_chips
+    )

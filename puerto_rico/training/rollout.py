@@ -103,9 +103,13 @@ def wrap_random(agent, *, perspective_is_current: bool = True) -> OpponentFn:
 
 
 class _SeatTrajectory:
-    """Accumulates one (game, seat) learner trajectory before GAE."""
+    """Accumulates one (game, seat) learner trajectory before GAE.
 
-    __slots__ = ("obs", "masks", "actions", "logprobs", "values")
+    ``shaping`` holds the per-step dense shaping reward (0 when no shaping is
+    applied); it is added to the per-step reward vector before GAE.
+    """
+
+    __slots__ = ("obs", "masks", "actions", "logprobs", "values", "shaping")
 
     def __init__(self) -> None:
         self.obs: list[np.ndarray] = []
@@ -113,16 +117,18 @@ class _SeatTrajectory:
         self.actions: list[int] = []
         self.logprobs: list[float] = []
         self.values: list[float] = []
+        self.shaping: list[float] = []
 
     def __len__(self) -> int:
         return len(self.actions)
 
-    def add(self, obs, mask, action, logprob, value) -> None:
+    def add(self, obs, mask, action, logprob, value, shaping=0.0) -> None:
         self.obs.append(obs)
         self.masks.append(mask)
         self.actions.append(int(action))
         self.logprobs.append(float(logprob))
         self.values.append(float(value))
+        self.shaping.append(float(shaping))
 
 
 def _gae(
@@ -162,6 +168,7 @@ def collect_rollouts(
     gamma: float = 0.999,
     gae_lambda: float = 0.95,
     reward_mode: str = "rank",
+    shaping_coef: float = 0.0,
     device: str = "cpu",
     rng_seed: int | None = None,
     deterministic: bool = False,
@@ -189,6 +196,18 @@ def collect_rollouts(
         GAE-Lambda discount / smoothing.
     reward_mode:
         Terminal reward mode (``"rank"`` default; see ``reward_config``).
+    shaping_coef:
+        Dense building-development shaping coefficient. When ``> 0``, each LEARNER
+        transition's reward gets ``shaping_coef * Δ building_development_score``
+        for that seat, where the delta is the change in the seat's
+        :func:`reward_config.building_development_score` between its consecutive
+        decision points (the first decision's delta is measured against the
+        seat's score at the start of the game). This shaping reward is added to
+        the transition reward BEFORE GAE so it shapes the advantage; the terminal
+        rank reward is still added to the last transition as usual. Opponent
+        seats are never affected. With ``shaping_coef == 0.0`` (default) the path
+        is byte-identical to the no-shaping rollout. Expected to come from an
+        annealed schedule (must reach 0 by end of training — design/05).
     device:
         Torch device for the returned tensors and policy inference.
     rng_seed:
@@ -240,6 +259,13 @@ def collect_rollouts(
 
         # One learner trajectory per learner seat for this game.
         trajs: dict[int, _SeatTrajectory] = {s: _SeatTrajectory() for s in learner_seats}
+        # Per-seat previous building-development score, for dense shaping. Only
+        # touched when shaping_coef != 0 (keeps the no-shaping path identical).
+        prev_dev: dict[int, float] = (
+            {s: reward_config.building_development_score(game.state, s) for s in learner_seats}
+            if shaping_coef != 0.0
+            else {}
+        )
 
         while not game.is_terminal:
             seat = game.current_player
@@ -260,8 +286,21 @@ def collect_rollouts(
             action_id = int(action_t.item())
             if mask_np[action_id] < 0.5:
                 mask_violations += 1
+
+            # dense building-development shaping at this seat's decision point.
+            shaping_r = 0.0
+            if shaping_coef != 0.0:
+                dev_now = reward_config.building_development_score(game.state, seat)
+                shaping_r = shaping_coef * (dev_now - prev_dev[seat])
+                prev_dev[seat] = dev_now
+
             trajs[seat].add(
-                obs_np, mask_np, action_id, float(logprob_t.item()), float(value_t.item())
+                obs_np,
+                mask_np,
+                action_id,
+                float(logprob_t.item()),
+                float(value_t.item()),
+                shaping_r,
             )
             action = action_codec.from_int(action_id, game.state)
             game.apply(action, validate=False)
@@ -284,8 +323,10 @@ def collect_rollouts(
             if len(traj) == 0:
                 continue
             values = np.asarray(traj.values, dtype=np.float64)
-            rew = np.zeros(len(traj), dtype=np.float64)
-            rew[-1] = rewards[seat]
+            # Per-step shaping reward (all 0 when shaping_coef == 0) plus the
+            # terminal rank reward on the last transition.
+            rew = np.asarray(traj.shaping, dtype=np.float64)
+            rew[-1] += rewards[seat]
             adv, ret = _gae(values, rew, gamma, gae_lambda)
 
             all_obs.extend(traj.obs)

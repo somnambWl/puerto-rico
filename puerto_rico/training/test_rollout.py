@@ -116,6 +116,45 @@ def test_terminal_reward_signal_matches_ranking():
     assert game.winner() == winner
 
 
+def test_shaping_coef_zero_is_identical_to_no_shaping():
+    # shaping_coef==0.0 must reproduce the no-shaping path byte-for-byte.
+    p1 = _fresh_policy(seed=11)
+    p2 = _fresh_policy(seed=11)
+    b0 = collect_rollouts(p1, target_steps=512, rng_seed=21, deterministic=True)
+    b0z = collect_rollouts(
+        p2, target_steps=512, rng_seed=21, shaping_coef=0.0, deterministic=True
+    )
+    assert torch.equal(b0["actions"], b0z["actions"])
+    assert torch.equal(b0["returns"], b0z["returns"])
+    assert torch.equal(b0["advantages"], b0z["advantages"])
+    assert torch.equal(b0["values"], b0z["values"])
+
+
+def test_shaping_coef_positive_runs_and_is_finite():
+    policy = _fresh_policy(seed=12)
+    batch = collect_rollouts(
+        policy, target_steps=512, rng_seed=22, shaping_coef=0.1, deterministic=True
+    )
+    _check_batch(batch, expect_min=512)
+    assert batch["info"]["mask_violations"] == 0
+
+
+def test_shaping_changes_returns_vs_no_shaping():
+    # With a non-trivial coef the shaped returns should differ from unshaped
+    # (same seed + same deterministic actions, only the reward changes).
+    p1 = _fresh_policy(seed=13)
+    p2 = _fresh_policy(seed=13)
+    plain = collect_rollouts(p1, target_steps=512, rng_seed=23, deterministic=True)
+    shaped = collect_rollouts(
+        p2, target_steps=512, rng_seed=23, shaping_coef=0.5, deterministic=True
+    )
+    # identical action trajectory (shaping does not change action selection)...
+    assert torch.equal(plain["actions"], shaped["actions"])
+    # ...but the returns differ because the per-step reward changed.
+    assert not torch.equal(plain["returns"], shaped["returns"])
+    assert torch.isfinite(shaped["returns"]).all()
+
+
 def test_info_stats_present():
     policy = _fresh_policy()
     batch = collect_rollouts(policy, target_steps=256, rng_seed=4)

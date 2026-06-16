@@ -16,6 +16,7 @@ from .ppo import (
     entropy_coef_at,
     evaluate_vs,
     ppo_update,
+    shaping_coef_at,
     train,
 )
 from .ppo import _random_factory  # eval helper
@@ -63,6 +64,39 @@ def test_entropy_anneal():
     # no decay when anneal_iters == 0
     cfg2 = PPOConfig(entropy_coef=0.02, entropy_anneal_iters=0)
     assert entropy_coef_at(cfg2, 100) == 0.02
+
+
+def test_shaping_anneal():
+    cfg = PPOConfig(shaping_coef0=0.1, shaping_anneal_iters=10)
+    assert shaping_coef_at(cfg, 0) == 0.1
+    assert shaping_coef_at(cfg, 10) == 0.0
+    assert shaping_coef_at(cfg, 20) == 0.0  # clamped to 0 past the horizon
+    mid = shaping_coef_at(cfg, 5)
+    assert 0.0 < mid < 0.1
+    # no decay when anneal_iters == 0 -> constant coef0
+    cfg2 = PPOConfig(shaping_coef0=0.1, shaping_anneal_iters=0)
+    assert shaping_coef_at(cfg2, 100) == 0.1
+    # default disables shaping entirely
+    assert shaping_coef_at(PPOConfig(), 0) == 0.0
+
+
+def test_train_smoke_with_shaping(tmp_path):
+    cfg = PPOConfig(
+        total_iterations=2,
+        rollout_steps=512,
+        minibatch_size=128,
+        update_epochs=2,
+        eval_interval=0,
+        snapshot_interval=2,
+        self_play_prob=0.0,
+        shaping_coef0=0.1,
+        shaping_anneal_iters=2,
+        out_dir=str(tmp_path),
+        seed=0,
+    )
+    final = train(cfg)
+    assert final == str(tmp_path / "final.pt")
+    assert (tmp_path / "final.pt").exists()
 
 
 def test_evaluate_vs_runs():
