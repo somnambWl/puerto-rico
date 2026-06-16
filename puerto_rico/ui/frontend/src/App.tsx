@@ -421,6 +421,20 @@ function GameView({ gameId, humanSeat, onNewGame }: GameViewProps) {
   return (
     <div className="game">
       <header className="game-header">
+        <button
+          className="menu-btn"
+          title="Quit this game and return to the menu"
+          onClick={() => {
+            if (
+              currentState.terminal ||
+              window.confirm("Quit the current game and return to the menu?")
+            ) {
+              onNewGame();
+            }
+          }}
+        >
+          ☰ Menu
+        </button>
         <span>
           Game {gameId.slice(0, 8)} · you are P{humanSeat}
         </span>

@@ -95,6 +95,19 @@ button {
   padding: 6px 0;
   border-bottom: 1px solid var(--line);
 }
+.menu-btn {
+  background: var(--panel-2);
+  color: var(--text);
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  padding: 4px 10px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+.menu-btn:hover {
+  border-color: var(--accent);
+  color: var(--accent);
+}
 .conn {
   padding: 2px 8px;
   border-radius: 10px;
