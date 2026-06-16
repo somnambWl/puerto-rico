@@ -25,6 +25,7 @@ import type {
   LegalAction,
 } from "../types";
 import {
+  buildingColor,
   GOOD_COLORS,
   GOOD_NAMES,
   PHASE_NAMES,
@@ -172,7 +173,7 @@ export function Board({
         </div>
       </section>
 
-      <div className="board-grid">
+      <div className="board-grid board-grid-2">
         {/* Ships */}
         <section className="board-section">
           <h3>Ships</h3>
@@ -262,41 +263,6 @@ export function Board({
           </div>
         </section>
 
-        {/* Supplies */}
-        <section className="board-section">
-          <h3>Supplies</h3>
-          <div className="supply-row">
-            <div className="supply">
-              <span className="supply-num">{view.colonist_supply}</span>
-              <span className="supply-label">colonists left</span>
-            </div>
-            <div className="supply">
-              <span className="supply-num">{view.vp_chips_remaining}</span>
-              <span className="supply-label">VP chips left</span>
-            </div>
-            <div className="supply">
-              <span className="supply-num">{view.quarry_supply}</span>
-              <span className="supply-label">quarries</span>
-            </div>
-            <div className="supply">
-              <span className="supply-num">
-                {view.plantation_facedown_count}
-              </span>
-              <span className="supply-label">deck</span>
-            </div>
-          </div>
-          <div className="goods-supply">
-            {view.goods_supply.map((n, g) => (
-              <span key={g} className="good-supply" title={GOOD_NAMES[g]}>
-                <span
-                  className="good-dot"
-                  style={{ background: GOOD_COLORS[g] }}
-                />
-                {n}
-              </span>
-            ))}
-          </div>
-        </section>
       </div>
 
       {/* Face-up plantation row (+ quarry take) */}
@@ -375,6 +341,7 @@ export function Board({
                     highlight.buildingId === id;
                   const buildId = actionFor({ type: "build", building: id });
                   const clickable = buildId != null;
+                  const accent = buildingColor(meta?.produces, large);
                   return (
                     <InfoTooltip
                       key={id}
@@ -389,6 +356,7 @@ export function Board({
                             produces={meta.produces}
                             available={n}
                             max={max}
+                            isLarge={meta.is_large}
                           />
                         ) : (
                           <div className="tt-title">building {id}</div>
@@ -399,10 +367,10 @@ export function Board({
                         className={
                           "shelf-building" +
                           (large ? " shelf-large" : "") +
-                          (meta?.is_production ? " shelf-production" : "") +
                           (clickable ? " board-clickable" : "") +
                           hlClass(hl, highlight?.ghost)
                         }
+                        style={{ borderLeft: `5px solid ${accent}` }}
                         onClick={
                           clickable
                             ? () => takeBoardAction(buildId)
@@ -421,7 +389,7 @@ export function Board({
                           {meta?.name ?? `#${id}`}
                         </span>
                         <span className="shelf-meta">
-                          ${meta?.cost} · {n}/{max} left
+                          ${meta?.cost} · {vp} VP · {n}/{max} left
                         </span>
                       </div>
                     </InfoTooltip>
@@ -432,6 +400,45 @@ export function Board({
           ))}
         </div>
       </section>
+    </div>
+  );
+}
+
+/**
+ * SuppliesStrip — the persistent "game clock" shown in the header.
+ *
+ * Compact, always-visible view of the end-game triggers (VP chips left +
+ * colonists left) plus quarry / plantation-deck counts and the per-good supply
+ * dots. Lives in the pinned header so the player always sees how close the game
+ * is to ending. Updates live with `view`.
+ */
+export function SuppliesStrip({ view }: { view: GameView }) {
+  return (
+    <div className="supplies-strip" title="Game supplies (end-game triggers)">
+      <span className="ss-item" title="Victory-point chips remaining (end-game trigger)">
+        <span className="ss-num">{view.vp_chips_remaining}</span>
+        <span className="ss-label">VP chips</span>
+      </span>
+      <span className="ss-item" title="Colonists remaining in the supply (end-game trigger)">
+        <span className="ss-num">{view.colonist_supply}</span>
+        <span className="ss-label">colonists</span>
+      </span>
+      <span className="ss-item" title="Quarries remaining">
+        <span className="ss-num">{view.quarry_supply}</span>
+        <span className="ss-label">quarries</span>
+      </span>
+      <span className="ss-item" title="Face-down plantation deck">
+        <span className="ss-num">{view.plantation_facedown_count}</span>
+        <span className="ss-label">deck</span>
+      </span>
+      <span className="ss-goods">
+        {view.goods_supply.map((n, g) => (
+          <span key={g} className="ss-good" title={`${GOOD_NAMES[g]} supply`}>
+            <span className="good-dot" style={{ background: GOOD_COLORS[g] }} />
+            {n}
+          </span>
+        ))}
+      </span>
     </div>
   );
 }

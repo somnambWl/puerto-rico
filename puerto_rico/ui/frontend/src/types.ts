@@ -257,6 +257,41 @@ export const GOOD_COLORS: Record<number, string> = {
   4: "#5a3a22", // coffee - dark brown
 };
 
+/**
+ * Building accent colors (board-game color coding).
+ *
+ * Production buildings take the color of the good they produce (catalog
+ * `produces`, matching GOOD_COLORS). Small "violet" buildings get a violet
+ * tone; large buildings a deeper purple. Returns a CSS color for the accent
+ * bar / tint on shelf tiles and city slots.
+ */
+export const BUILDING_VIOLET = "#7a5fb0"; // small violet buildings
+export const BUILDING_LARGE = "#4a3a6b"; // large buildings (deeper purple)
+
+/** Map a catalog `produces` good name to its GOOD_COLORS color. */
+const PRODUCE_COLOR: Record<string, string> = {
+  indigo: GOOD_COLORS[1],
+  sugar: GOOD_COLORS[2],
+  tobacco: GOOD_COLORS[3],
+  coffee: GOOD_COLORS[4],
+  corn: GOOD_COLORS[0],
+};
+
+/**
+ * Accent color for a building given its catalog metadata. `produces` is the
+ * catalog good name (or null), `isLarge` flags the column-4 large buildings.
+ */
+export function buildingColor(
+  produces: string | null | undefined,
+  isLarge: boolean | undefined,
+): string {
+  if (isLarge) return BUILDING_LARGE;
+  if (produces && PRODUCE_COLOR[produces] !== undefined) {
+    return PRODUCE_COLOR[produces];
+  }
+  return BUILDING_VIOLET;
+}
+
 /** Role enum -> display name (enums.py :: Role). */
 export const ROLE_NAMES: Record<number, string> = {
   0: "Settler",

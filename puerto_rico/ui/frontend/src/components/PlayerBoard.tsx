@@ -8,12 +8,11 @@
  * The human board renders large; opponent boards render compact.
  */
 
-import { useState } from "react";
-
 import { useBuildingInfo } from "../catalog";
-import { findAction } from "../findAction";
-import type { BuildingId, LegalAction, PlayerView } from "../types";
+import type { PlacementModel } from "../hooks/usePlacement";
+import type { BuildingId, PlayerView } from "../types";
 import {
+  buildingColor,
   GOOD_COLORS,
   GOOD_NAMES,
   LARGE_CONT,
@@ -36,36 +35,15 @@ interface PlayerBoardProps {
   highlightBuilding?: BuildingId | null;
   /** Hover a city slot to highlight that building type everywhere. */
   onBuildingHover?: (id: BuildingId | null) => void;
-  /** Legal actions for the human's current turn — used for click/drag colonist
-   * placement during the human's own Mayor phase. Empty otherwise. */
-  legalActions?: LegalAction[];
-  /** Take the action with this id (drop / click a colonist target). */
-  onBoardAction?: (id: number) => void;
-}
-
-/** A draggable San Juan colonist token (Mayor placement). */
-function ColonistToken({
-  onDragStart,
-  onDragEnd,
-}: {
-  onDragStart: () => void;
-  onDragEnd: () => void;
-}) {
-  return (
-    <span
-      className="colonist-token"
-      draggable
-      onDragStart={(e) => {
-        e.dataTransfer.effectAllowed = "move";
-        e.dataTransfer.setData("text/plain", "colonist");
-        onDragStart();
-      }}
-      onDragEnd={onDragEnd}
-      title="Drag onto an empty circle to place"
-    >
-      <span className="dot" />
-    </span>
-  );
+  /**
+   * The shared Mayor-placement arrangement. When present (the human's own Mayor
+   * turn), this board IS the placement surface: island/city slots become drop /
+   * click targets, pending colonist dots are read from the model, and drops /
+   * clicks mutate the model (no per-action submit — Confirm batches it).
+   */
+  placement?: PlacementModel | null;
+  /** True while a San Juan token is being dragged (for drop affordance). */
+  placingDragActive?: boolean;
 }
 
 function ColonistDots({ count }: { count: number }) {
@@ -89,38 +67,19 @@ export function PlayerBoard({
   orderNumber,
   highlightBuilding,
   onBuildingHover,
-  legalActions = [],
-  onBoardAction,
+  placement = null,
+  placingDragActive = false,
 }: PlayerBoardProps) {
   const buildingInfo = useBuildingInfo();
-  const [dragging, setDragging] = useState(false);
   const cls =
     "player-board" +
     (isHuman ? " player-human" : " player-compact") +
-    (active ? " player-active" : "");
+    (active ? " player-active" : "") +
+    (placement ? " player-placing" : "");
 
-  // Mayor placement is live only on the human's own board when a PLACE_COLONIST
-  // is among the legal actions. Resolve the action id for a given drop target.
-  const placing =
-    isHuman && legalActions.some((a) => a.kind === "colonist");
-  const cityActionId = (i: number) =>
-    findAction(legalActions, { type: "colonist", kind: "city", index: i });
-  const islandActionId = (i: number) =>
-    findAction(legalActions, { type: "colonist", kind: "island", index: i });
-  const storeActionId = findAction(legalActions, {
-    type: "colonist",
-    kind: "store",
-  });
-  const take = (id: number | null) => {
-    if (id != null && onBoardAction) onBoardAction(id);
-  };
-  // Distinct empty placement targets still available this turn.
-  const remainingTargets = placing
-    ? legalActions.filter(
-        (a) =>
-          a.kind === "colonist" && a.colonist_target?.kind !== "store",
-      ).length
-    : 0;
+  // Mayor placement is live only on the human's own board when the shared
+  // placement model is supplied.
+  const placing = isHuman && placement != null;
 
   return (
     <div className={cls}>
@@ -156,41 +115,6 @@ export function PlayerBoard({
         </span>
       </div>
 
-      {/* Mayor placement: drag San Juan colonists onto empty circles. */}
-      {placing && (
-        <div className="mayor-placement">
-          <div className="mayor-placement-head">
-            <span className="mayor-placement-label">
-              Place colonists — drag a token onto an empty circle
-            </span>
-            <button
-              className="action-btn mayor-store-btn"
-              disabled={storeActionId == null}
-              onClick={() => take(storeActionId)}
-              title="Keep the rest in San Juan and end placement"
-            >
-              Done / store remaining
-            </button>
-          </div>
-          <div className="mayor-supply">
-            {playerView.stored_colonists > 0 ? (
-              Array.from({ length: playerView.stored_colonists }).map((_, i) => (
-                <ColonistToken
-                  key={i}
-                  onDragStart={() => setDragging(true)}
-                  onDragEnd={() => setDragging(false)}
-                />
-              ))
-            ) : (
-              <span className="muted">none in San Juan</span>
-            )}
-            <span className="muted mayor-remaining">
-              {remainingTargets} open slot{remainingTargets === 1 ? "" : "s"}
-            </span>
-          </div>
-        </div>
-      )}
-
       {/* Goods inventory */}
       <div className="player-goods">
         {playerView.goods.map((n, g) => (
@@ -210,10 +134,16 @@ export function PlayerBoard({
         <div className="island-grid">
           {playerView.island.map((slot, i) => {
             const empty = slot.tile === 0;
-            // A tiled-but-unmanned island slot is a colonist drop target.
-            const dropId =
-              placing && !empty && !slot.colonist ? islandActionId(i) : null;
-            const droppable = dropId != null;
+            // During placement, a tiled island slot is interactive: show the
+            // PENDING colonist from the shared model (not the lifted live state).
+            const pendingHere =
+              placing && !empty && placement!.isFilled("island", i, 0);
+            const droppable = placing && !empty && !pendingHere;
+            const onSlot = () => {
+              if (!placing || empty) return;
+              if (pendingHere) placement!.removeFrom("island", i);
+              else placement!.placeOn("island", i);
+            };
             return (
               <div
                 key={i}
@@ -221,15 +151,17 @@ export function PlayerBoard({
                   "island-slot" +
                   (empty ? " slot-empty" : "") +
                   (droppable ? " drop-target" : "") +
-                  (droppable && dragging ? " drop-active" : "")
+                  (droppable && placingDragActive ? " drop-active" : "")
                 }
                 style={empty ? undefined : { background: TILE_COLORS[slot.tile] }}
                 title={
                   droppable
                     ? "Drop a colonist here"
-                    : TILE_NAMES[slot.tile]
+                    : pendingHere
+                      ? "Click to return this colonist to San Juan"
+                      : TILE_NAMES[slot.tile]
                 }
-                onClick={droppable ? () => take(dropId) : undefined}
+                onClick={placing && !empty ? onSlot : undefined}
                 onDragOver={
                   droppable
                     ? (e) => {
@@ -242,8 +174,7 @@ export function PlayerBoard({
                   droppable
                     ? (e) => {
                         e.preventDefault();
-                        setDragging(false);
-                        take(dropId);
+                        placement!.placeOn("island", i);
                       }
                     : undefined
                 }
@@ -251,7 +182,10 @@ export function PlayerBoard({
                 {!empty && (
                   <>
                     <span className="slot-text">{TILE_NAMES[slot.tile]}</span>
-                    {slot.colonist && <ColonistDots count={1} />}
+                    {/* Placement: pending dot from the model. Otherwise: live. */}
+                    {placing
+                      ? pendingHere && <ColonistDots count={1} />
+                      : slot.colonist && <ColonistDots count={1} />}
                   </>
                 )}
               </div>
@@ -272,16 +206,27 @@ export function PlayerBoard({
             const empty = slot.building === null;
             const meta = empty ? null : buildingInfo(slot.building as number);
             const large = meta?.is_large ?? false;
+            const accent = empty
+              ? undefined
+              : buildingColor(meta?.produces, large);
             const name = meta?.name ?? "";
+            const capacity = meta?.capacity ?? 0;
             const typeHl =
               !empty &&
               highlightBuilding != null &&
               slot.building === highlightBuilding;
-            // A built slot with spare capacity is a colonist drop target during
-            // the human's Mayor placement (the engine offers it as a legal
-            // PLACE_COLONIST(city, index)).
-            const dropId = placing && !empty ? cityActionId(i) : null;
-            const droppable = dropId != null;
+            // During placement, a built slot shows its PENDING colonist count
+            // from the shared model and is a drop / click target while it has
+            // spare capacity. Clicking a staffed slot returns one colonist.
+            const pendingCount =
+              placing && !empty ? placement!.cityFilledCount(i) : 0;
+            const droppable =
+              placing && !empty && pendingCount < capacity;
+            const onSlot = () => {
+              if (!placing || empty) return;
+              if (pendingCount < capacity) placement!.placeOn("city", i);
+              else placement!.removeFrom("city", i);
+            };
             const slotEl = (
               <div
                 className={
@@ -290,12 +235,26 @@ export function PlayerBoard({
                   (large ? " city-large" : "") +
                   (typeHl ? " building-type-hl" : "") +
                   (droppable ? " drop-target" : "") +
-                  (droppable && dragging ? " drop-active" : "")
+                  (droppable && placingDragActive ? " drop-active" : "")
+                }
+                style={
+                  accent
+                    ? {
+                        borderLeft: `5px solid ${accent}`,
+                        background: `color-mix(in srgb, ${accent} 22%, var(--panel-2))`,
+                      }
+                    : undefined
                 }
                 title={
-                  droppable ? "Drop a colonist here" : empty ? "empty" : name
+                  droppable
+                    ? "Drop a colonist here"
+                    : placing && !empty && pendingCount > 0
+                      ? "Click to return a colonist to San Juan"
+                      : empty
+                        ? "empty"
+                        : name
                 }
-                onClick={droppable ? () => take(dropId) : undefined}
+                onClick={placing && !empty ? onSlot : undefined}
                 onDragOver={
                   droppable
                     ? (e) => {
@@ -308,8 +267,7 @@ export function PlayerBoard({
                   droppable
                     ? (e) => {
                         e.preventDefault();
-                        setDragging(false);
-                        take(dropId);
+                        placement!.placeOn("city", i);
                       }
                     : undefined
                 }
@@ -323,7 +281,10 @@ export function PlayerBoard({
                 {!empty && (
                   <>
                     <span className="slot-text">{name}</span>
-                    <ColonistDots count={slot.colonists} />
+                    {/* Placement: pending dots from the model. Otherwise live. */}
+                    <ColonistDots
+                      count={placing ? pendingCount : slot.colonists}
+                    />
                   </>
                 )}
               </div>
@@ -347,6 +308,7 @@ export function PlayerBoard({
                     capacity={meta.capacity}
                     description={meta.description}
                     produces={meta.produces}
+                    isLarge={meta.is_large}
                   />
                 }
               >

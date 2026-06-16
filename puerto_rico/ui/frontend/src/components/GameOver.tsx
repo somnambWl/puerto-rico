@@ -7,6 +7,8 @@
  * descending; the winner row is highlighted.
  */
 
+import { createPortal } from "react-dom";
+
 import type { Result } from "../types";
 import { GOOD_COLORS, GOOD_NAMES } from "../types";
 
@@ -21,7 +23,10 @@ export function GameOver({ result, playerNames, onNewGame }: GameOverProps) {
     (a, b) => b.final_score - a.final_score,
   );
 
-  return (
+  // Render via a portal to document.body so the viewport shell (`.game`, which
+  // is `overflow:hidden`) can neither clip nor cover the fixed overlay. The
+  // overlay's high z-index keeps it above all in-game UI.
+  return createPortal(
     <div className="modal-overlay">
       <div className="modal">
         <h2>Game over</h2>
@@ -77,6 +82,7 @@ export function GameOver({ result, playerNames, onNewGame }: GameOverProps) {
           New game
         </button>
       </div>
-    </div>
+    </div>,
+    document.body,
   );
 }

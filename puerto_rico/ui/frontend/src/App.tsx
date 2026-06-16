@@ -18,15 +18,17 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 
 import { createGame, getCatalog, type Opponent } from "./api";
 import { CatalogProvider, useBuildingInfo } from "./catalog";
-import { Board } from "./components/Board";
+import { Board, SuppliesStrip } from "./components/Board";
 import { GameOver } from "./components/GameOver";
 import { Log } from "./components/Log";
+import { PlacementEditor } from "./components/PlacementEditor";
 import { PlaybackBar } from "./components/PlaybackBar";
 import { PlayerBoard } from "./components/PlayerBoard";
 import { ActionPrompt } from "./components/ActionPrompt";
 import { PreviewPanel } from "./components/PreviewPanel";
 import { Standings } from "./components/Standings";
 import { useGameState } from "./hooks/useGameState";
+import { usePlacement } from "./hooks/usePlacement";
 import { useActionPreview } from "./hooks/useActionPreview";
 import { useLogEntries } from "./hooks/useLogEntries";
 import type {
@@ -229,6 +231,8 @@ function GameView({ gameId, humanSeat, onNewGame }: GameViewProps) {
     resume,
     step,
     skipToEnd,
+    sendActions,
+    preLiftState,
   } = useGameState(gameId);
 
   const buildingInfo = useBuildingInfo();
@@ -252,6 +256,28 @@ function GameView({ gameId, humanSeat, onNewGame }: GameViewProps) {
   const playerNames = useMemo(
     () => [0, 1, 2, 3].map((s) => playerName(s, humanSeat)),
     [humanSeat],
+  );
+
+  // True while a San Juan colonist token is mid-drag (for board drop affordance).
+  const [placingDragActive, setPlacingDragActive] = useState(false);
+
+  // The human's own Mayor placement turn: colonists were lifted and the legal
+  // actions are PLACE_COLONIST targets. (Computed from currentState so the
+  // placement hook below can be called unconditionally, before any early return.)
+  const isMayorPlacement =
+    currentState != null &&
+    !currentState.terminal &&
+    currentState.to_move_is_human &&
+    currentState.legal_actions.some((a) => a.kind === "colonist");
+
+  // Single shared placement arrangement: the human's PlayerBoard is the surface
+  // and the PlacementEditor control bar both read/write this one model.
+  const humanPlayerView = currentState?.view.players[humanSeat] ?? null;
+  const placement = usePlacement(
+    isMayorPlacement ? humanPlayerView : null,
+    isMayorPlacement ? preLiftState?.view.players[humanSeat] ?? null : null,
+    isMayorPlacement ? currentState!.legal_actions : [],
+    isMayorPlacement ? humanPlayerView?.stored_colonists ?? 0 : 0,
   );
 
   const onAction = useCallback(
@@ -360,6 +386,11 @@ function GameView({ gameId, humanSeat, onNewGame }: GameViewProps) {
     currentState.terminal ||
     !currentState.to_move_is_human;
 
+  // When it's the human's Mayor placement turn (and not animating), the board is
+  // the placement surface and the control bar (drag source + Place-all + Confirm)
+  // replaces the action prompt in the pinned action area.
+  const showPlacementEditor = isMayorPlacement && !isAnimating;
+
   const others = view.players
     .map((_, seat) => seat)
     .filter((seat) => seat !== humanSeat);
@@ -393,6 +424,7 @@ function GameView({ gameId, humanSeat, onNewGame }: GameViewProps) {
         <span>
           Game {gameId.slice(0, 8)} · you are P{humanSeat}
         </span>
+        <SuppliesStrip view={view} />
         <PlaybackBar
           active={isAnimating}
           index={playbackIndex}
@@ -437,23 +469,38 @@ function GameView({ gameId, humanSeat, onNewGame }: GameViewProps) {
               orderNumber={orderNumberOf[humanSeat]}
               highlightBuilding={highlightBuilding}
               onBuildingHover={setHighlightBuilding}
-              legalActions={promptDisabled ? [] : currentState.legal_actions}
-              onBoardAction={onBoardAction}
+              placement={showPlacementEditor ? placement : null}
+              placingDragActive={placingDragActive}
             />
           </div>
 
           {/* Pinned action bar: always visible at the bottom of the left
-              column. Its buttons wrap/scroll internally if there are many. */}
+              column. During the human's Mayor placement it hosts the placement
+              editor (drag + Place-all + Confirm); otherwise the action prompt.
+              The per-circle board drag/click remains a fallback either way. */}
           <div className="game-action-bar">
-            <ActionPrompt
-              legalActions={currentState.legal_actions}
-              onAction={onAction}
-              disabled={promptDisabled}
-              aiThinking={aiThinking}
-              onHighlight={setHighlight}
-              onPreview={onPreview}
-              view={view}
-            />
+            {showPlacementEditor ? (
+              <PlacementEditor
+                placement={placement}
+                onSanJuanDragStart={() => setPlacingDragActive(true)}
+                onSanJuanDragEnd={() => setPlacingDragActive(false)}
+                onConfirm={(ids) => {
+                  setHighlight(null);
+                  clearPreview();
+                  if (ids.length > 0) sendActions(ids);
+                }}
+              />
+            ) : (
+              <ActionPrompt
+                legalActions={currentState.legal_actions}
+                onAction={onAction}
+                disabled={promptDisabled}
+                aiThinking={aiThinking}
+                onHighlight={setHighlight}
+                onPreview={onPreview}
+                view={view}
+              />
+            )}
           </div>
         </main>
 

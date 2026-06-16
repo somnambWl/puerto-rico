@@ -181,9 +181,22 @@ def label_action(action: Action, game) -> str:
             return f"Use Wharf to ship {good_name}"
         try:
             held = game.state.players[game.state.current_player].goods[action.good]
-            return f"Ship {held} {good_name}"
         except Exception:
-            return f"Ship {good_name}"
+            held = None
+        # Disambiguate the two cargo ships: identify WHICH ship by its capacity
+        # and current fill, since both LOAD options otherwise read identically.
+        ship_desc = ""
+        if action.target is not None:
+            try:
+                ship = game.state.cargo_ships[action.target]
+                ship_desc = (
+                    f" → {ship.capacity}-space ship ({ship.count}/{ship.capacity})"
+                )
+            except Exception:
+                ship_desc = ""
+        if held is not None:
+            return f"Ship {held} {good_name}{ship_desc}"
+        return f"Ship {good_name}{ship_desc}"
 
     if t == DecisionType.CHOOSE:
         # The only CHOOSE the engine emits is the craftsman extra-good pick.

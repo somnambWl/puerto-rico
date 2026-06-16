@@ -60,6 +60,15 @@ export interface GameStateHook {
   step: () => void;
   /** Drain the whole queue at once and show the final frame. */
   skipToEnd: () => void;
+  /** Send an ordered batch of action ids in ONE round-trip (mayor confirm). */
+  sendActions: (actionIds: number[]) => void;
+  /**
+   * The human's most recent NON-mayor-placement frame's view — the board as it
+   * looked the moment before the engine lifted their colonists. Used to seed the
+   * placement editor with "your colonists where you left them". Null until such a
+   * frame has been seen.
+   */
+  preLiftState: StateMsg | null;
 }
 
 export function useGameState(gameId: string | null): GameStateHook {
@@ -73,6 +82,7 @@ export function useGameState(gameId: string | null): GameStateHook {
   const [status, setStatus] = useState<ConnectionStatus>("connecting");
   const [error, setError] = useState<string | null>(null);
   const [logFeed, setLogFeed] = useState<StateMsg[]>([]);
+  const [preLiftState, setPreLiftState] = useState<StateMsg | null>(null);
 
   const wsRef = useRef<WebSocket | null>(null);
   // Pending animation queue + timer handle.
@@ -98,12 +108,28 @@ export function useGameState(gameId: string | null): GameStateHook {
     }
   }, []);
 
+  // True when `s` is the human's own Mayor placement decision (colonists were
+  // lifted; legal actions are PLACE_COLONIST targets).
+  const isHumanMayorPlacement = (s: StateMsg): boolean =>
+    s.to_move_is_human &&
+    !s.terminal &&
+    s.legal_actions.some((a) => a.kind === "colonist");
+
+  // Remember the latest frame that is NOT a human mayor-placement turn — i.e.
+  // the board just before the engine lifted the human's colonists. The editor
+  // seeds from this so the human's colonists appear where they left them.
+  const recordPreLift = useCallback((s: StateMsg) => {
+    if (s.preview) return;
+    if (!isHumanMayorPlacement(s)) setPreLiftState(s);
+  }, []);
+
   // Show one queued frame; returns true if one was shown.
   const showNext = useCallback((): boolean => {
     const next = queueRef.current.shift();
     if (next === undefined) return false;
     hasInitial.current = true;
     setCurrentState(next);
+    recordPreLift(next);
     setLogFeed((prev) => [...prev, next]);
     shownRef.current += 1;
     setPlaybackIndex(shownRef.current);
@@ -115,7 +141,7 @@ export function useGameState(gameId: string | null): GameStateHook {
       pausedRef.current = false;
     }
     return true;
-  }, []);
+  }, [recordPreLift]);
 
   // Auto-advance tick: respects pause.
   const tick = useCallback(() => {
@@ -182,6 +208,9 @@ export function useGameState(gameId: string | null): GameStateHook {
     const last = q[q.length - 1];
     // Push all remaining frames to the log so history stays complete.
     setLogFeed((prev) => [...prev, ...q]);
+    // Record pre-lift across every drained frame (not just the last) so the
+    // editor's seed is correct even when we skip past the AI's turns.
+    for (const f of q) recordPreLift(f);
     shownRef.current += q.length;
     queueRef.current = [];
     hasInitial.current = true;
@@ -191,7 +220,7 @@ export function useGameState(gameId: string | null): GameStateHook {
     setIsAnimating(false);
     setIsPaused(false);
     pausedRef.current = false;
-  }, [clearTimer]);
+  }, [clearTimer, recordPreLift]);
 
   // Open the socket (and seed from GET) whenever the gameId changes.
   useEffect(() => {
@@ -207,6 +236,7 @@ export function useGameState(gameId: string | null): GameStateHook {
         if (!cancelled && !hasInitial.current) {
           hasInitial.current = true;
           setCurrentState(s);
+          recordPreLift(s);
         }
       })
       .catch(() => {
@@ -248,6 +278,7 @@ export function useGameState(gameId: string | null): GameStateHook {
         if (queueRef.current.length === 0 && timerRef.current === null) {
           hasInitial.current = true;
           setCurrentState(state);
+          recordPreLift(state);
         }
         // `type` is intentionally unused — destructured only to omit it.
         void type;
@@ -268,7 +299,7 @@ export function useGameState(gameId: string | null): GameStateHook {
     // belong in the dep array. Listing them would needlessly tear down and
     // re-open the WebSocket. (exhaustive-deps relaxed for this reason.)
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [gameId, enqueue]);
+  }, [gameId, enqueue, recordPreLift]);
 
   const sendAction = useCallback((actionId: number) => {
     const ws = wsRef.current;
@@ -278,6 +309,17 @@ export function useGameState(gameId: string | null): GameStateHook {
     }
     setError(null);
     ws.send(JSON.stringify({ action_id: actionId }));
+  }, []);
+
+  const sendActions = useCallback((actionIds: number[]) => {
+    const ws = wsRef.current;
+    if (!ws || ws.readyState !== WebSocket.OPEN) {
+      setError("not connected");
+      return;
+    }
+    if (actionIds.length === 0) return;
+    setError(null);
+    ws.send(JSON.stringify({ action_ids: actionIds }));
   }, []);
 
   return {
@@ -297,5 +339,7 @@ export function useGameState(gameId: string | null): GameStateHook {
     resume,
     step,
     skipToEnd,
+    sendActions,
+    preLiftState,
   };
 }

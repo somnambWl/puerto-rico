@@ -10,6 +10,8 @@
 
 import { useCallback, useRef, useState } from "react";
 
+import { buildingColor } from "../types";
+
 interface InfoTooltipProps {
   /** The rendered tooltip body (shown on hover). */
   content: React.ReactNode;
@@ -80,6 +82,7 @@ export function BuildingTooltipBody({
   produces,
   available,
   max,
+  isLarge,
 }: {
   name: string;
   cost: number;
@@ -89,10 +92,15 @@ export function BuildingTooltipBody({
   produces?: string | null;
   available?: number;
   max?: number;
+  isLarge?: boolean;
 }) {
+  const swatch = buildingColor(produces, isLarge);
   return (
     <div className="tt-building">
-      <div className="tt-title">{name}</div>
+      <div className="tt-title">
+        <span className="tt-swatch" style={{ background: swatch }} />
+        {name}
+      </div>
       <div className="tt-stats">
         <span className="tt-stat">${cost}</span>
         <span className="tt-stat">{vp} VP</span>

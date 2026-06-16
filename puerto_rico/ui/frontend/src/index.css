@@ -96,9 +96,47 @@ button {
   border-bottom: 1px solid var(--line);
 }
 .conn {
-  margin-left: auto;
   padding: 2px 8px;
   border-radius: 10px;
+  font-size: 12px;
+}
+
+/* Persistent "game clock" in the header: end-game triggers + good supplies. */
+.supplies-strip {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+  padding: 3px 10px;
+  background: var(--panel-2);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+}
+.ss-item {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 4px;
+}
+.ss-num {
+  font-weight: 700;
+  font-size: 15px;
+  color: var(--accent);
+}
+.ss-label {
+  font-size: 11px;
+  color: var(--muted);
+}
+.ss-goods {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding-left: 10px;
+  border-left: 1px solid var(--line);
+}
+.ss-good {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
   font-size: 12px;
 }
 .conn-open {
@@ -195,6 +233,9 @@ button {
   display: grid;
   grid-template-columns: repeat(3, 1fr);
   gap: 10px;
+}
+.board-grid-2 {
+  grid-template-columns: repeat(2, 1fr);
 }
 
 /* placards */
@@ -454,7 +495,7 @@ button {
 .island-slot,
 .city-slot {
   position: relative;
-  min-height: 34px;
+  min-height: 44px;
   border: 1px solid var(--line);
   border-radius: 4px;
   display: flex;
@@ -490,15 +531,20 @@ button {
 
 .dots {
   display: flex;
-  gap: 2px;
+  gap: 3px;
   margin-top: 2px;
 }
 .dot {
-  width: 7px;
-  height: 7px;
+  width: 14px;
+  height: 14px;
   border-radius: 50%;
   background: #d9b38c;
   border: 1px solid #6b4f33;
+}
+/* Opponent (compact) boards keep small dots so they don't overflow tiny slots. */
+.player-compact .dot {
+  width: 8px;
+  height: 8px;
 }
 
 .opponents {
@@ -518,45 +564,12 @@ button {
   box-shadow: 0 0 0 2px var(--hl);
 }
 
-/* Mayor placement panel on the human board. */
-.mayor-placement {
-  margin: 6px 0;
-  padding: 6px 8px;
-  background: var(--panel-2);
-  border: 1px solid var(--line);
-  border-radius: 6px;
-}
-.mayor-placement-head {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 8px;
-  margin-bottom: 6px;
-}
-.mayor-placement-label {
-  font-size: 12px;
-  color: var(--accent);
-}
-.mayor-store-btn {
-  padding: 4px 10px;
-  font-size: 12px;
-}
-.mayor-supply {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  flex-wrap: wrap;
-}
-.mayor-remaining {
-  margin-left: auto;
-  font-size: 12px;
-}
 .colonist-token {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 18px;
-  height: 18px;
+  width: 26px;
+  height: 26px;
   border-radius: 50%;
   background: var(--panel);
   border: 1px solid var(--line);
@@ -564,6 +577,75 @@ button {
 }
 .colonist-token:active {
   cursor: grabbing;
+}
+/* The disc inside a draggable San Juan token is sized up for an easy grab. */
+.colonist-token .dot {
+  width: 18px;
+  height: 18px;
+}
+
+/* ---------------------- mayor placement control bar ----------------------- */
+/* There is ONE placement area: the human's PlayerBoard. This is just the compact
+   control bar (San Juan source + counts + Place all / Clear / Confirm) that sits
+   in the pinned action area during the human's Mayor turn. */
+.placement-editor {
+  padding: 8px 10px;
+  border-top: 2px solid var(--accent);
+}
+.pe-bar {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  flex-wrap: wrap;
+}
+.pe-head {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.pe-title {
+  font-weight: 600;
+  color: var(--accent);
+}
+.pe-counts {
+  font-size: 13px;
+  color: var(--muted);
+}
+.pe-actions {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-left: auto;
+}
+.pe-place-all {
+  background: var(--accent);
+  color: #1a1a1a;
+  font-weight: 600;
+}
+.pe-confirm {
+  border: 1px solid var(--accent);
+}
+.pe-sanjuan {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  min-height: 38px;
+  padding: 4px 10px;
+  background: var(--panel-2);
+  border: 1px dashed var(--line);
+  border-radius: 6px;
+}
+.pe-zone-label {
+  font-size: 12px;
+  color: var(--muted);
+  margin-right: 4px;
+}
+
+/* While placing, the human's board reads as the active placement surface. */
+.player-placing .island-grid,
+.player-placing .city-grid {
+  cursor: pointer;
 }
 
 /* Empty/available circles become drop targets while placing colonists. */
@@ -678,7 +760,9 @@ button {
   display: flex;
   align-items: center;
   justify-content: center;
-  z-index: 10;
+  /* Above every in-game layer (preview panel z=60, tooltips z=50). The modal is
+     portaled to <body> so the `overflow:hidden` viewport shell cannot clip it. */
+  z-index: 1000;
 }
 .modal {
   background: var(--panel);
@@ -835,8 +919,16 @@ button {
   gap: 6px;
   flex-wrap: wrap;
 }
-.shelf-production {
-  border-left: 3px solid var(--active);
+/* The colored left accent on shelf tiles / city slots is applied inline
+   (types.ts :: buildingColor) so the type is recognizable at a glance. */
+.tt-swatch {
+  display: inline-block;
+  width: 10px;
+  height: 10px;
+  border-radius: 2px;
+  margin-right: 6px;
+  vertical-align: middle;
+  border: 1px solid rgba(0, 0, 0, 0.4);
 }
 
 /* --------------------------- playback bar --------------------------- */
