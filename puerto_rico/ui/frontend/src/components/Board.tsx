@@ -2,8 +2,9 @@
  * Board — the shared table state rendered from `view`.
  *
  * Role placards (with accumulated doubloons; available roles highlighted during
- * role selection), the colonist ship, cargo ships, the trading house (with each
- * good's base sell value + a value legend), supplies, the face-up plantation
+ * role selection), the colonist ship, cargo ships, the trading house (a narrow
+ * vertical stack of good chips with each good's base sell value + a stacked
+ * base-value legend), supplies, the face-up plantation
  * row, and the buildings-available shelf grouped into VP rows (deluxe 1897
  * layout). Buildings (shelf + occupied city slots elsewhere) carry hover
  * tooltips so players don't memorize effects.

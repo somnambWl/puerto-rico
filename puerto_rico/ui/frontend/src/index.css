@@ -169,9 +169,10 @@ button {
   flex: 1 1 auto;
   min-height: 0;
   display: grid;
-  /* Wider right column so the opponent boards (the key thing to track) are
-     readable. The left column flexes to fill the rest. */
-  grid-template-columns: minmax(0, 1fr) 460px;
+  /* The left content is now compact (4-col human board, 3-col shelf, vertical
+     trading house), so the right column gets the reclaimed width: the opponent
+     boards are the key thing a player tracks. Left flexes to fill the rest. */
+  grid-template-columns: minmax(0, 1fr) 600px;
   gap: 12px;
   align-items: stretch;
 }
@@ -307,16 +308,20 @@ button {
 }
 
 /* trading house + supplies */
+/* Vertical stack: a narrow column of good chips instead of a wide row, so the
+   trading house reads as a tight panel and frees horizontal space. */
 .trading-house {
   display: flex;
+  flex-direction: column;
+  align-items: flex-start;
   gap: 4px;
-  flex-wrap: wrap;
 }
 .good-chip {
   padding: 2px 8px;
   border-radius: 8px;
   color: #1a1409;
   font-size: 12px;
+  white-space: nowrap;
 }
 .supply-row {
   display: flex;
@@ -517,14 +522,22 @@ button {
 .island-grid,
 .city-grid {
   display: grid;
-  grid-template-columns: repeat(6, 1fr);
+  /* Human board: 4 columns → 3 rows of 4 slots. A 2-wide large building spans
+     2 of the 4 columns and `row dense` backfills any gap it would leave. */
+  grid-template-columns: repeat(4, 1fr);
   gap: 3px;
   /* Dense packing so a 2-wide large building at a row's end doesn't orphan a
      cell and push slots onto an extra row — trailing empty cells backfill the gap. */
   grid-auto-flow: row dense;
 }
+/* The human board doesn't need full width: cap it so the freed horizontal
+   space is real (reclaimed by the wider opponent column) and the 4-col grid
+   reads as compact rather than stretched. */
+.player-human {
+  max-width: 560px;
+}
 /* Opponent (compact) boards: keep them smaller than the human's but readable.
-   6-column grids (like the human) instead of cramped 12-column. */
+   6-column grids instead of cramped 12-column. */
 .player-compact .island-grid,
 .player-compact .city-grid {
   grid-template-columns: repeat(6, 1fr);
@@ -561,10 +574,11 @@ button {
   text-align: center;
   line-height: 1.1;
 }
+/* With the wider right column, opponent slots can be bigger and more legible. */
 .player-compact .island-slot,
 .player-compact .city-slot {
-  min-height: 34px;
-  font-size: 9px;
+  min-height: 42px;
+  font-size: 11px;
 }
 
 .dots {
@@ -579,10 +593,11 @@ button {
   background: #d9b38c;
   border: 1px solid #6b4f33;
 }
-/* Opponent (compact) boards keep small dots so they don't overflow slots. */
+/* Opponent (compact) boards keep slightly smaller dots so they don't overflow
+   slots, but large enough to read at the wider opponent-column size. */
 .player-compact .dot {
-  width: 10px;
-  height: 10px;
+  width: 12px;
+  height: 12px;
 }
 
 .opponents {
@@ -604,6 +619,11 @@ button {
 }
 .player-compact .player-stats {
   margin: 2px 0;
+  font-size: 13px;
+}
+/* Opponent goods inventory: a touch larger so quantities read at a glance. */
+.player-compact .player-goods {
+  font-size: 13px;
 }
 
 /* ----------------- direct manipulation (click / drag) ---------------- */
@@ -936,11 +956,12 @@ button {
 .good-chip strong {
   font-weight: 800;
 }
+/* Tight stacked list under the chips so the trading house stays a narrow panel. */
 .goods-legend {
   display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 8px;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
   margin-top: 6px;
   font-size: 11px;
   color: var(--muted);
@@ -953,6 +974,7 @@ button {
   display: inline-flex;
   align-items: center;
   gap: 4px;
+  white-space: nowrap;
 }
 
 /* --------------------------- buildings shelf (VP rows) --------------------------- */
@@ -978,11 +1000,13 @@ button {
   border-radius: 6px;
   font-size: 12px;
 }
-/* Uniform-width tiles that line up in neat columns and wrap to new rows. */
+/* Uniform-width tiles in a fixed 3-column grid: a 6-building VP group wraps as
+   two even rows of 3 (a 5-building group as 3+2), narrowing the shelf and
+   removing the orphan a wider auto-fill left behind. */
 .vp-row-buildings {
-  flex: 1 1 auto;
+  flex: 0 1 auto;
   display: grid;
-  grid-template-columns: repeat(auto-fill, 160px);
+  grid-template-columns: repeat(3, 160px);
   gap: 6px;
 }
 /* The colored left accent on shelf tiles / city slots is applied inline
