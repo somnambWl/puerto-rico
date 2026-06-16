@@ -76,16 +76,24 @@ button {
 }
 
 /* --------------------------- layout --------------------------- */
+/* Single-viewport app shell: the page itself never scrolls. The header and
+   the human's pinned action bar are always visible; the board area and the
+   side panel scroll internally. */
 .game {
+  height: 100vh;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
   padding: 8px 12px;
+  gap: 8px;
 }
 .game-header {
+  flex: 0 0 auto;
   display: flex;
   gap: 16px;
   align-items: center;
   padding: 6px 0;
   border-bottom: 1px solid var(--line);
-  margin-bottom: 8px;
 }
 .conn {
   margin-left: auto;
@@ -104,21 +112,46 @@ button {
   background: #4d2323;
 }
 
+/* Main area fills the remaining viewport height; both columns are bounded so
+   their inner regions can scroll rather than growing the page. */
 .game-layout {
+  flex: 1 1 auto;
+  min-height: 0;
   display: grid;
   grid-template-columns: 1fr 360px;
   gap: 12px;
-  align-items: start;
+  align-items: stretch;
 }
+/* Left column: a scrollable board region above a pinned action bar. */
 .game-main {
   display: flex;
   flex-direction: column;
   gap: 12px;
+  min-height: 0;
 }
+/* The board + human PlayerBoard scroll here if space is tight. */
+.game-main-scroll {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+/* Pinned action area — always visible at the bottom of the left column. Capped
+   in height; the legal-action buttons wrap and scroll within it. */
+.game-action-bar {
+  flex: 0 0 auto;
+  max-height: 40vh;
+  overflow-y: auto;
+}
+/* Right column scrolls internally (standings + opponents + log). */
 .game-side {
   display: flex;
   flex-direction: column;
   gap: 12px;
+  min-height: 0;
+  overflow-y: auto;
 }
 
 .loading {
@@ -545,6 +578,11 @@ button {
 }
 
 /* --------------------------- action prompt --------------------------- */
+/* The action-prompt lives inside the pinned .game-action-bar. Anchor it with a
+   top accent so it reads as the always-present "your move" bar. */
+.game-action-bar .action-prompt {
+  border-top: 2px solid var(--accent);
+}
 .action-group {
   margin-bottom: 10px;
 }
@@ -595,12 +633,25 @@ button {
 }
 
 /* --------------------------- log --------------------------- */
+/* The Log fills the leftover space at the bottom of the right column and
+   scrolls its entries internally (never the page). */
+.game-side .log {
+  flex: 1 1 auto;
+  min-height: 120px;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
 .log-entries {
+  flex: 1 1 auto;
   max-height: 280px;
   overflow-y: auto;
   display: flex;
   flex-direction: column;
   gap: 3px;
+}
+.game-side .log .log-entries {
+  max-height: none;
 }
 .log-entry {
   display: flex;
@@ -925,10 +976,11 @@ button {
   border: 1px dashed var(--accent);
   border-radius: 8px;
   padding: 10px;
-  /* Float above the board so it is always visible on hover, not below the fold. */
+  /* Float at the top-right so it is always visible on hover and never overlaps
+     the pinned action bar at the bottom of the viewport. */
   position: fixed;
   right: 16px;
-  bottom: 16px;
+  top: 64px;
   z-index: 60;
   min-width: 240px;
   max-width: 340px;

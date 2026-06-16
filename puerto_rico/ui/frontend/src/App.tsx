@@ -413,46 +413,48 @@ function GameView({ gameId, humanSeat, onNewGame }: GameViewProps) {
 
       <div className="game-layout">
         <main className="game-main">
-          <Board
-            view={view}
-            highlight={activeHighlight}
-            governorName={governorName}
-            toMoveName={toMoveName}
-            onBuildingHover={setHighlightBuilding}
-            legalActions={promptDisabled ? [] : currentState.legal_actions}
-            onBoardAction={onBoardAction}
-            onBoardHover={onBoardHover}
-          />
+          {/* Scrollable region: shared board + the human's large board. The
+              action bar below is pinned and never scrolls out of view. */}
+          <div className="game-main-scroll">
+            <Board
+              view={view}
+              highlight={activeHighlight}
+              governorName={governorName}
+              toMoveName={toMoveName}
+              onBuildingHover={setHighlightBuilding}
+              legalActions={promptDisabled ? [] : currentState.legal_actions}
+              onBoardAction={onBoardAction}
+              onBoardHover={onBoardHover}
+            />
 
-          <PlayerBoard
-            playerView={view.players[humanSeat]}
-            seat={humanSeat}
-            isHuman
-            name={playerNames[humanSeat]}
-            active={view.current_player === humanSeat}
-            isGovernor={view.governor === humanSeat}
-            orderNumber={orderNumberOf[humanSeat]}
-            highlightBuilding={highlightBuilding}
-            onBuildingHover={setHighlightBuilding}
-            legalActions={promptDisabled ? [] : currentState.legal_actions}
-            onBoardAction={onBoardAction}
-          />
+            <PlayerBoard
+              playerView={view.players[humanSeat]}
+              seat={humanSeat}
+              isHuman
+              name={playerNames[humanSeat]}
+              active={view.current_player === humanSeat}
+              isGovernor={view.governor === humanSeat}
+              orderNumber={orderNumberOf[humanSeat]}
+              highlightBuilding={highlightBuilding}
+              onBuildingHover={setHighlightBuilding}
+              legalActions={promptDisabled ? [] : currentState.legal_actions}
+              onBoardAction={onBoardAction}
+            />
+          </div>
 
-          <ActionPrompt
-            legalActions={currentState.legal_actions}
-            onAction={onAction}
-            disabled={promptDisabled}
-            aiThinking={aiThinking}
-            onHighlight={setHighlight}
-            onPreview={onPreview}
-            view={view}
-          />
-
-          <PreviewPanel
-            label={previewLabel}
-            diff={previewDiff}
-            loading={previewLoading}
-          />
+          {/* Pinned action bar: always visible at the bottom of the left
+              column. Its buttons wrap/scroll internally if there are many. */}
+          <div className="game-action-bar">
+            <ActionPrompt
+              legalActions={currentState.legal_actions}
+              onAction={onAction}
+              disabled={promptDisabled}
+              aiThinking={aiThinking}
+              onHighlight={setHighlight}
+              onPreview={onPreview}
+              view={view}
+            />
+          </div>
         </main>
 
         <aside className="game-side">
@@ -480,6 +482,13 @@ function GameView({ gameId, humanSeat, onNewGame }: GameViewProps) {
           <Log entries={logEntries} playerNames={playerNames} />
         </aside>
       </div>
+
+      {/* Floats at the top-right so it never overlaps the pinned action bar. */}
+      <PreviewPanel
+        label={previewLabel}
+        diff={previewDiff}
+        loading={previewLoading}
+      />
 
       {currentState.terminal && currentState.result && (
         <GameOver
